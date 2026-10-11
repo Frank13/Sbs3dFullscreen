@@ -54,7 +54,7 @@ import fr.camera3d.camera.feature_playlists.ui.PlaylistScreenStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleEditorStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleTarget
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.*
+import sbs3dViewer.resources.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 

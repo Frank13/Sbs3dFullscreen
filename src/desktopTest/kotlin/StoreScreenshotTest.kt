@@ -100,6 +100,10 @@ class StoreScreenshotTest {
                 onOpenPlaylistList = {},
                 onOpenGallery = {},
                 onOpenAbout = {},
+                halveLeftRightImages = true,
+                onHalveLeftRightImagesChosen = {},
+                shrinkControls = false,
+                onShrinkControlsChosen = {},
             )
         }
     }
@@ -184,7 +188,9 @@ class StoreScreenshotTest {
             PlaylistScreen(
                 playlist = samplePlaylist(),
                 onAddPhotos = {},
-                onPlay = {},
+                onAddMusic = {},
+                onRemoveSoundtrackItem = {},
+                onPlay = { true },
                 onBack = {},
                 onEditName = { true },
                 canRenamePlaylist = { true },

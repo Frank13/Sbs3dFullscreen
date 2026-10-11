@@ -23,7 +23,7 @@ version = "1.0-SNAPSHOT"
 
 // Shared with the packageMsix task below, so the app-image directory name it reads from and the
 // jpackage packageName it's built from can't drift apart.
-val appPackageName = "sbs3Dfullscreen"
+val appPackageName = "sbs3dViewer"
 
 repositories {
     google()
@@ -111,7 +111,7 @@ kotlin {
 }
 
 compose.resources {
-    packageOfResClass = "sbs3dfullscreen.resources"
+    packageOfResClass = "sbs3dViewer.resources"
 }
 
 tasks.withType<Test>().configureEach {
@@ -137,12 +137,11 @@ compose.desktop {
         jvmArgs += "-Dga.measurementId=${localProperties.getProperty("ga.measurementId", "")}"
         jvmArgs += "-Dga.apiSecret=${localProperties.getProperty("ga.apiSecret", "")}"
 
-        // OpenCV's Java bindings load a native opencv_java*.dll at runtime (System.loadLibrary),
-        // vendored alongside the jar - see libs/opencv/README.md. Only takes effect once that
-        // directory actually exists, so `run`/tests work before OpenCV is vendored too.
-        if (project.file("libs/opencv").exists()) {
-            jvmArgs += "-Djava.library.path=${project.file("libs/opencv").absolutePath}"
-        }
+        // OpenCV's native opencv_java*.dll: no -Djava.library.path here on purpose. Written into the
+        // packaged app's .cfg, an absolute path to this machine's libs/opencv is wrong on users'
+        // machines, and the launcher's .cfg parser also eats its backslashes. The packaged app
+        // instead ships the DLL in its resources dir (nativeDistributions.appResourcesRootDir below)
+        // and AutoAlign.kt loads it from there; `run` gets the library path via the task below.
 
         // jpackage (used to build the Msi/Exe installers) needs a JDK that bundles it;
         // this points only at the packaging step, independent of the JDK running Gradle.
@@ -153,10 +152,25 @@ compose.desktop {
             packageName = appPackageName
             packageVersion = project.property("appVersion") as String
 
+            // The packaged app ships a jlink-trimmed runtime with only Compose's default JDK modules;
+            // anything else the code uses crashes at startup with NoClassDefFoundError (which the
+            // jpackage launcher reports as a bare "Failed to launch JVM"). `run` doesn't catch this
+            // since it uses the full JDK. List from `./gradlew.bat suggestRuntimeModules` - re-run it
+            // after adding a dependency or a new java.* API (e.g. java.net.http for Analytics.kt).
+            modules("java.instrument", "java.net.http", "java.prefs", "java.sql", "jdk.unsupported")
+
+            // Files under <root>/windows-x64 are copied into the packaged app's resources dir
+            // (compose.application.resources.dir); see the stageOpencvResources task below.
+            appResourcesRootDir.set(layout.buildDirectory.dir("opencvResources"))
+
             windows {
                 shortcut = true
                 menu = true
                 iconFile.set(project.file("icons/icon.ico"))
+                // jpackage derives the default upgrade code from the app name, so renaming the app
+                // (sbs3Dfullscreen -> sbs3dViewer) would change it and stop new installers from
+                // replacing older installs in place. Pinned to the value the old name produced.
+                upgradeUuid = "77253DF0-7D95-3D21-8AD0-D1A771DEA5ED"
             }
 
             fileAssociation(
@@ -172,6 +186,21 @@ compose.desktop {
                 windowsIconFile = project.file("icons/icon.ico"),
             )
         }
+    }
+}
+
+// Stages the vendored OpenCV DLL where appResourcesRootDir expects it, so every packaging task
+// (createDistributable, packageMsi/Exe, packageMsix) bundles it into the app's resources dir.
+val stageOpencvResources by tasks.registering(Copy::class) {
+    from(project.file("libs/opencv")) { include("*.dll") }
+    into(layout.buildDirectory.dir("opencvResources/windows-x64"))
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(stageOpencvResources) }
+
+// `run` isn't packaged, so it still finds the DLL via the vendored folder.
+tasks.withType<JavaExec>().matching { it.name == "run" }.configureEach {
+    if (project.file("libs/opencv").exists()) {
+        jvmArgs("-Djava.library.path=${project.file("libs/opencv").absolutePath}")
     }
 }
 

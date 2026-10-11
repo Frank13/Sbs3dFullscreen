@@ -21,11 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.vlc_missing_dismiss
-import sbs3dfullscreen.resources.vlc_missing_download
-import sbs3dfullscreen.resources.vlc_missing_message
-import sbs3dfullscreen.resources.vlc_missing_title
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.vlc_missing_dismiss
+import sbs3dViewer.resources.vlc_missing_download
+import sbs3dViewer.resources.vlc_missing_message
+import sbs3dViewer.resources.vlc_missing_title
 
 /** Explains that VLC is required for videos and music, with a link to download it - see AppViewModel.requireVlc. */
 @OptIn(ExperimentalMaterial3Api::class)

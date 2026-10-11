@@ -42,11 +42,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.image_settings_audio_output_label
-import sbs3dfullscreen.resources.image_settings_exit_fullscreen_label
-import sbs3dfullscreen.resources.image_settings_next_label
-import sbs3dfullscreen.resources.image_settings_previous_label
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.image_settings_audio_output_label
+import sbs3dViewer.resources.image_settings_exit_fullscreen_label
+import sbs3dViewer.resources.image_settings_next_label
+import sbs3dViewer.resources.image_settings_previous_label
 import java.io.File
 
 // Same sign convention as InfoPanelShiftPercent/CursorShiftPercent (negative = toward the

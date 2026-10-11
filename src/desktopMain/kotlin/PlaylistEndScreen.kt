@@ -23,10 +23,10 @@ import fr.camera3d.camera.feature_playlists.ui.ComposablePortableEndSlide
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.icon
-import sbs3dfullscreen.resources.playlist_end_label
-import sbs3dfullscreen.resources.playlist_end_slide_hint
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.icon
+import sbs3dViewer.resources.playlist_end_label
+import sbs3dViewer.resources.playlist_end_slide_hint
 
 private const val EndIconPaddingFraction = 0.05f
 private const val EndLabelHeightFraction = 0.2f

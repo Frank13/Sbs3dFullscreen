@@ -21,8 +21,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.ui.ComposablePortableTitleSlide
 import org.jetbrains.compose.resources.painterResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.icon
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.icon
 
 // Both the right and bottom padding, as a fraction of the screen HEIGHT (so they are equal).
 private const val TitleIconPaddingFraction = 0.05f

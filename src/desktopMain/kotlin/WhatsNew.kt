@@ -17,16 +17,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.whats_new_got_it
-import sbs3dfullscreen.resources.whats_new_history_title
-import sbs3dfullscreen.resources.whats_new_title
-import sbs3dfullscreen.resources.whats_new_v105_item_1
-import sbs3dfullscreen.resources.whats_new_v105_item_2
-import sbs3dfullscreen.resources.whats_new_v105_item_3
-import sbs3dfullscreen.resources.whats_new_v104_item_1
-import sbs3dfullscreen.resources.whats_new_v104_item_2
-import sbs3dfullscreen.resources.whats_new_v104_item_3
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.whats_new_got_it
+import sbs3dViewer.resources.whats_new_history_title
+import sbs3dViewer.resources.whats_new_title
+import sbs3dViewer.resources.whats_new_v105_item_1
+import sbs3dViewer.resources.whats_new_v105_item_2
+import sbs3dViewer.resources.whats_new_v105_item_3
+import sbs3dViewer.resources.whats_new_v104_item_1
+import sbs3dViewer.resources.whats_new_v104_item_2
+import sbs3dViewer.resources.whats_new_v104_item_3
 
 data class WhatsNewRelease(val versionName: String, val items: List<StringResource>)
 

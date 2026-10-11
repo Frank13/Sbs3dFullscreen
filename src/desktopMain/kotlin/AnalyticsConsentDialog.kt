@@ -3,11 +3,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.analytics_consent_accept
-import sbs3dfullscreen.resources.analytics_consent_decline
-import sbs3dfullscreen.resources.analytics_consent_message
-import sbs3dfullscreen.resources.analytics_consent_title
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.analytics_consent_accept
+import sbs3dViewer.resources.analytics_consent_decline
+import sbs3dViewer.resources.analytics_consent_message
+import sbs3dViewer.resources.analytics_consent_title
 
 /**
  * Shown once (from Main.kt, gated on Analytics.hasAnsweredConsent) before any usage data is

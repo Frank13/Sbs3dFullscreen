@@ -41,19 +41,19 @@ import fr.camera3d.camera.common.ui_components.ScreenWith3dotMenuAndSnackbar
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.cancel_button
-import sbs3dfullscreen.resources.create_playlist_button
-import sbs3dfullscreen.resources.create_playlist_confirm
-import sbs3dfullscreen.resources.create_playlist_dialog_title
-import sbs3dfullscreen.resources.playlist_back_button
-import sbs3dfullscreen.resources.playlist_list_empty
-import sbs3dfullscreen.resources.playlist_list_refresh
-import sbs3dfullscreen.resources.playlist_list_title
-import sbs3dfullscreen.resources.playlist_name_already_exists
-import sbs3dfullscreen.resources.playlist_name_label
-import sbs3dfullscreen.resources.playlist_play_button
-import sbs3dfullscreen.resources.vlc_missing_cannot_play_toast
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.cancel_button
+import sbs3dViewer.resources.create_playlist_button
+import sbs3dViewer.resources.create_playlist_confirm
+import sbs3dViewer.resources.create_playlist_dialog_title
+import sbs3dViewer.resources.playlist_back_button
+import sbs3dViewer.resources.playlist_list_empty
+import sbs3dViewer.resources.playlist_list_refresh
+import sbs3dViewer.resources.playlist_list_title
+import sbs3dViewer.resources.playlist_name_already_exists
+import sbs3dViewer.resources.playlist_name_label
+import sbs3dViewer.resources.playlist_play_button
+import sbs3dViewer.resources.vlc_missing_cannot_play_toast
 import java.io.File
 
 /**

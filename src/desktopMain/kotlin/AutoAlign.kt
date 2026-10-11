@@ -61,7 +61,13 @@ object AutoAlign {
         if (!openCvLoaded) {
             synchronized(this) {
                 if (!openCvLoaded) {
-                    System.loadLibrary(Core.NATIVE_LIBRARY_NAME)
+                    // Packaged app: the DLL ships in Compose's resources dir. Dev runs have no such
+                    // property and fall back to -Djava.library.path (set by build.gradle.kts).
+                    val bundled = System.getProperty("compose.application.resources.dir")
+                        ?.let { File(it, System.mapLibraryName(Core.NATIVE_LIBRARY_NAME)) }
+                        ?.takeIf { it.exists() }
+                    if (bundled != null) System.load(bundled.absolutePath)
+                    else System.loadLibrary(Core.NATIVE_LIBRARY_NAME)
                     openCvLoaded = true
                 }
             }

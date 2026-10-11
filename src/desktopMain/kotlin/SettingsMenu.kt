@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.image_settings_menu_content_description
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.image_settings_menu_content_description
 
 /**
  * Building blocks shared by ImageScreen's and VideoScreen's settings ("burger") menus - both put a

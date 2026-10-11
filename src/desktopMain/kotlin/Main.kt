@@ -26,20 +26,39 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.icon
-import sbs3dfullscreen.resources.playlist_add_music_dialog_title
-import sbs3dfullscreen.resources.playlist_add_photos_directory_dialog_title
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.icon
+import sbs3dViewer.resources.playlist_add_music_dialog_title
+import sbs3dViewer.resources.playlist_add_photos_directory_dialog_title
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main(args: Array<String>) {
-    runApp(args)
+    try {
+        runApp(args)
+    } catch (t: Throwable) {
+        reportStartupCrash(t)
+        throw t
+    }
+}
+
+// The packaged app's jpackage launcher turns any exception escaping main() into a bare "Failed to
+// launch JVM" box with no stack trace, so surface the real error: shown in a dialog and saved to
+// ~/sbs3dViewer-crash.log (the user profile root, which MSIX doesn't virtualize unlike AppData).
+private fun reportStartupCrash(t: Throwable) {
+    val trace = t.stackTraceToString()
+    runCatching { File(System.getProperty("user.home"), "sbs3dViewer-crash.log").writeText(trace) }
+    runCatching {
+        val text = javax.swing.JTextArea(trace, 25, 100).apply { isEditable = false }
+        javax.swing.JOptionPane.showMessageDialog(
+            null, javax.swing.JScrollPane(text), "SBS 3D Viewer - startup error", javax.swing.JOptionPane.ERROR_MESSAGE
+        )
+    }
 }
 
 private fun runApp(args: Array<String>) = application {
     // Windows launches the app with the file path as an argument when it's opened
-    // via a file association (double-click, "Open with sbs3dFullscreen", etc.).
+    // via a file association (double-click, "Open with sbs3dViewer", etc.).
     val initialFile = args.firstOrNull()?.let(::File)?.takeIf { it.isFile }
     val windowState = rememberWindowState(
         placement = if (initialFile != null) WindowPlacement.Maximized else WindowPlacement.Floating
@@ -432,6 +451,10 @@ private fun runApp(args: Array<String>) = application {
                                     onUseNewOpenCv5Chosen = viewModel::onUseNewOpenCv5Chosen,
                                     audioOutputDeviceId = viewModel.audioOutputDeviceId,
                                     onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
+                                    halveLeftRightImages = viewModel.halveLeftRightImages,
+                                    onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
+                                    shrinkControls = viewModel.shrinkControls,
+                                    onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
                                     onFilesChosen = { files ->
                                         if (viewModel.onFilesChosen(files)) enterFullscreen()
                                     },

@@ -833,7 +833,7 @@ class AppViewModel(initialFile: File?) {
     /** Whether a new playlist named [name] wouldn't collide with an existing one already on disk. */
     fun canCreatePlaylist(name: String): Boolean = playlistEditor.canCreate(name)
 
-    /** Creates a playlist folder under Pictures/sbs3dFullscreen/{name} and switches to the
+    /** Creates a playlist folder under Pictures/SBS 3D Viewer/{name} and switches to the
      *  PlaylistEdit screen for it - see PlaylistEditorState.startCreate. No-ops on a blank name. */
     fun startCreatePlaylist(name: String) {
         if (!playlistEditor.startCreate(name)) return

@@ -20,6 +20,7 @@ exist yet)
   of whatever JDK runs Gradle itself.
   - Bump `appVersion` in `gradle.properties` before every release build — jpackage/Windows Installer only auto-uninstalls 
   the previous version in-place when this number increases; an unchanged version forces users into Add/Remove Programs instead.
+- Regenerate the app icon (`icon.png` + `icons/icon.ico` + `icons/icon-square.png`, the square-cornered variant the Store/Start tiles are built from so they don't show black corners): `python ./tools/generate-app-icon.py` (needs Pillow; `GLYPH_SCALE` sets how much of the tile the monitor fills), then `./tools/generate-msix-assets.ps1`
 - Build an MSIX for Microsoft Store submission: `./gradlew.bat packageMsix`
   - Wraps the `createDistributable` app-image (no code changes) with a hand-written `packaging/msix/AppxManifest.xml` 
   template + Store logo PNGs (`packaging/msix/Assets/`, regenerated from `icons/icon.ico` by `./tools/generate-msix-assets.ps1` 
@@ -28,7 +29,8 @@ exist yet)
   not on PATH by default — point `-PmsixMakeAppxPath=...` at it if needed), and fill in `msixPackageIdentityName`/`msixPublisher`/
   `msixPublisherDisplayName` in `gradle.properties` from Partner Center's app name reservation.
   - Output is unsigned: Partner Center signs Store submissions itself; local sideload testing (`Add-AppxPackage`) needs a matching 
-  test-cert signature first.
+  test-cert signature first — `./tools/sign-msix-for-sideload.ps1 [-Install]` creates a self-signed cert from `msixPublisher`, trusts it 
+  (first run needs an elevated PowerShell) and writes a signed copy `build/msix/*-sideload.msix`. Never upload that copy to the Store.
 
 ## Architecture
 
@@ -70,6 +72,8 @@ The mouse cursor gets the same "single overlay reads as pinned to the glass" pro
 - Under "shrink controls" (`AppViewModel.shrinkControls`), the cursor dots also **match the depth of whatever panel/dialog they're hovering**, via `CursorDepthRegistry`/`Modifier.cursor3DDepthTarget(shiftPercent)` — otherwise a cursor always floating at the fixed -1% reads as detached from a control rendered at a different depth (e.g. the settings menu/`InfoPanel`'s own panel Box, which render at 0%/-1% respectively). **Whenever you add a new "shrink controls" panel/dialog (menu, `InfoPanel`-like HUD, `Stereo3DAlertDialog`-based dialog, or anything else wrapped in `shrinkHorizontally`), add `.cursor3DDepthTarget(theSameShiftPercentConstantThatPanelRendersAt)` to that panel's own outer container Box** (the one already carrying `.shrinkHorizontally(...)`), same left-half-only registration convention as `cursor3DClickTarget`. Falls back to the default -1% wherever the cursor isn't over any registered panel.
 
 ## Other notes:
+
+- Packaged builds (MSI/EXE/MSIX) run on a jlink-trimmed JDK limited to the `modules(...)` list in `build.gradle.kts`; `run` uses the full JDK and hides missing ones. After adding a dependency or a new `java.*` API, re-run `./gradlew.bat suggestRuntimeModules` and update that list — otherwise the packaged app dies at startup with a bare "Failed to launch JVM". `main()` shows the real stack trace in a dialog and writes it to `~/sbs3dFullscreen-crash.log`.
 
 - Window chrome is coupled to screen state: `undecorated` is true only in `ImageView`, and since AWT can't toggle `undecorated`
 after the peer is created, the whole `Window` is wrapped in `key(undecorated)` to force recreation when it changes.

@@ -24,7 +24,7 @@ import fr.camera3d.camera.feature_playlists.ui.ComposableItemMuted
 import fr.camera3d.camera.feature_playlists.ui.ComposableItemPhoto
 import fr.camera3d.camera.feature_playlists.ui.PlaylistItemScreenStrings
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.*
+import sbs3dViewer.resources.*
 
 /**
  * Playlist item detail screen: same fields/behavior as CameraSync3D's PlaylistItemFragment, built

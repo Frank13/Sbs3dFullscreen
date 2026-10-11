@@ -32,22 +32,22 @@ import androidx.compose.ui.unit.dp
 import fr.camera3d.camera.common.ui_components.ScreenWith3dotMenuAndSnackbar
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.icon
-import sbs3dfullscreen.resources.about_analytics_revoke_button
-import sbs3dfullscreen.resources.about_analytics_status_allowed
-import sbs3dfullscreen.resources.about_analytics_status_label
-import sbs3dfullscreen.resources.about_analytics_status_revoked
-import sbs3dfullscreen.resources.about_author_label
-import sbs3dfullscreen.resources.about_license_label
-import sbs3dfullscreen.resources.about_open_source_button
-import sbs3dfullscreen.resources.about_open_source_dialog_title
-import sbs3dfullscreen.resources.about_purpose_text
-import sbs3dfullscreen.resources.about_screen_title
-import sbs3dfullscreen.resources.about_version_label
-import sbs3dfullscreen.resources.about_whats_new_button
-import sbs3dfullscreen.resources.ok_button
-import sbs3dfullscreen.resources.playlist_back_button
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.icon
+import sbs3dViewer.resources.about_analytics_revoke_button
+import sbs3dViewer.resources.about_analytics_status_allowed
+import sbs3dViewer.resources.about_analytics_status_label
+import sbs3dViewer.resources.about_analytics_status_revoked
+import sbs3dViewer.resources.about_author_label
+import sbs3dViewer.resources.about_license_label
+import sbs3dViewer.resources.about_open_source_button
+import sbs3dViewer.resources.about_open_source_dialog_title
+import sbs3dViewer.resources.about_purpose_text
+import sbs3dViewer.resources.about_screen_title
+import sbs3dViewer.resources.about_version_label
+import sbs3dViewer.resources.about_whats_new_button
+import sbs3dViewer.resources.ok_button
+import sbs3dViewer.resources.playlist_back_button
 
 /** One open source dependency credited in the "Open source licenses" dialog below. */
 private data class OpenSourceLibrary(val name: String, val license: String)

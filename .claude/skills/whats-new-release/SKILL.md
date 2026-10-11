@@ -42,7 +42,7 @@ Translate the confirmed items (translate "Playlist" as "Diaporama"; fixes start 
 ### 5. Write the entry (add only, never modify existing entries)
 
 - `gradle.properties`: update `appVersion` if needed.
-- `WhatsNew.kt`: insert a new `WhatsNewRelease(versionName = "X.Y.Z", items = listOf(Res.string.whats_new_vXYZ_item_1, ...))` at the **top** of `allWhatsNewReleases`, plus the matching `import sbs3dfullscreen.resources.whats_new_vXYZ_item_N` lines (keys: version without dots, e.g. `1.0.5` -> `v105`).
+- `WhatsNew.kt`: insert a new `WhatsNewRelease(versionName = "X.Y.Z", items = listOf(Res.string.whats_new_vXYZ_item_1, ...))` at the **top** of `allWhatsNewReleases`, plus the matching `import sbs3dViewer.resources.whats_new_vXYZ_item_N` lines (keys: version without dots, e.g. `1.0.5` -> `v105`).
 - Both `strings.xml`: insert before `</resources>`, under a `<!-- vX.Y.Z -->` comment. Never backslash-escape apostrophes in these files.
 - `versionName` in `WhatsNew.kt` must equal `appVersion` exactly, otherwise the dialog is never shown.
 

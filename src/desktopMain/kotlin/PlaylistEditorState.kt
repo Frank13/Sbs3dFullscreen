@@ -20,8 +20,16 @@ import java.io.File
  * path, not playlist-editor-specific.
  */
 class PlaylistEditorState {
-    private val playlistsRoot: File
-        get() = File(File(System.getProperty("user.home"), "Pictures"), "sbs3dFullscreen")
+    // Resolved lazily (not on every access) so the one-time rename of the pre-rebrand
+    // Pictures/sbs3dFullscreen folder happens at most once per run - existing users keep their
+    // playlists. Skipped if the new folder already exists, so nothing is ever overwritten.
+    private val playlistsRoot: File by lazy {
+        val pictures = File(System.getProperty("user.home"), "Pictures")
+        val root = File(pictures, "SBS 3D Viewer")
+        val legacy = File(pictures, "sbs3dFullscreen")
+        if (!root.exists() && legacy.isDirectory) legacy.renameTo(root)
+        root
+    }
 
     // Playlists found under playlistsRoot, shown on the PlaylistList screen.
     var all by mutableStateOf<List<Playlist>>(emptyList())
@@ -110,7 +118,7 @@ class PlaylistEditorState {
     }
 
     /**
-     * Creates a playlist folder under Pictures/sbs3dFullscreen/{name} and opens it for editing,
+     * Creates a playlist folder under Pictures/SBS 3D Viewer/{name} and opens it for editing,
      * mirroring CameraSync3D's create-then-add-photos flow. Assumes the caller already checked
      * [canCreate]; if the sanitized name still collides with an existing playlist, that existing
      * playlist is reopened instead. Returns false (no-op) for a blank name.

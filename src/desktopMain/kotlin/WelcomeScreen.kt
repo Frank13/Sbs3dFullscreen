@@ -12,10 +12,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
 import androidx.compose.ui.draw.clip
-import sbs3dfullscreen.resources.image_settings_audio_output_label
-import sbs3dfullscreen.resources.image_settings_settings_label
-import sbs3dfullscreen.resources.welcome_settings_audio_unavailable
-import sbs3dfullscreen.resources.welcome_settings_language_label
+import sbs3dViewer.resources.image_settings_audio_output_label
+import sbs3dViewer.resources.image_settings_halve_left_right_toggle_label
+import sbs3dViewer.resources.image_settings_settings_label
+import sbs3dViewer.resources.image_settings_shrink_controls_toggle_label
+import sbs3dViewer.resources.welcome_settings_audio_unavailable
+import sbs3dViewer.resources.welcome_settings_language_label
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,25 +38,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.about_link_label
-import sbs3dfullscreen.resources.cancel_button
-import sbs3dfullscreen.resources.choose_jpeg_button
-import sbs3dfullscreen.resources.choose_playlist_button
-import sbs3dfullscreen.resources.file_dialog_title
-import sbs3dfullscreen.resources.import_playlist_already_exists
-import sbs3dfullscreen.resources.gallery_dialog_title
-import sbs3dfullscreen.resources.ok_button
-import sbs3dfullscreen.resources.opencv5_toggle_label
-import sbs3dfullscreen.resources.open_gallery_button
-import sbs3dfullscreen.resources.playlist_dialog_title
-import sbs3dfullscreen.resources.playlist_list_button
-import sbs3dfullscreen.resources.welcome
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.about_link_label
+import sbs3dViewer.resources.cancel_button
+import sbs3dViewer.resources.choose_jpeg_button
+import sbs3dViewer.resources.choose_playlist_button
+import sbs3dViewer.resources.file_dialog_title
+import sbs3dViewer.resources.import_playlist_already_exists
+import sbs3dViewer.resources.gallery_dialog_title
+import sbs3dViewer.resources.ok_button
+import sbs3dViewer.resources.opencv5_toggle_label
+import sbs3dViewer.resources.open_gallery_button
+import sbs3dViewer.resources.playlist_dialog_title
+import sbs3dViewer.resources.playlist_list_button
+import sbs3dViewer.resources.welcome
+import sbs3dViewer.resources.welcome_desktop_shortcut_button
+import sbs3dViewer.resources.welcome_desktop_shortcut_failed
 import java.io.File
 import javax.swing.JFileChooser
 
@@ -67,6 +75,10 @@ fun WelcomeScreen(
     onUseNewOpenCv5Chosen: (Boolean) -> Unit,
     audioOutputDeviceId: String,
     onAudioOutputDeviceChosen: (String) -> Unit,
+    halveLeftRightImages: Boolean,
+    onHalveLeftRightImagesChosen: (Boolean) -> Unit,
+    shrinkControls: Boolean,
+    onShrinkControlsChosen: (Boolean) -> Unit,
     onFilesChosen: (List<File>) -> Unit,
     onImportPlaylist: (File) -> Boolean,
     onOpenPlaylistList: () -> Unit,
@@ -78,6 +90,10 @@ fun WelcomeScreen(
     val galleryDialogTitle = stringResource(Res.string.gallery_dialog_title)
     var importErrorFolderName by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    // Re-checked each time the welcome screen is shown, so deleting the shortcut brings the button back.
+    var showDesktopShortcutButton by remember { mutableStateOf(DesktopShortcut.isAvailable && !DesktopShortcut.exists()) }
+    var showShortcutFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
@@ -138,6 +154,18 @@ fun WelcomeScreen(
             }) {
                 Text(stringResource(Res.string.open_gallery_button))
             }
+            if (showDesktopShortcutButton) {
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    scope.launch {
+                        val created = withContext(Dispatchers.IO) { DesktopShortcut.create() }
+                        Analytics.logEvent("create_desktop_shortcut", mapOf("success" to created))
+                        if (created) showDesktopShortcutButton = false else showShortcutFailed = true
+                    }
+                }) {
+                    Text(stringResource(Res.string.welcome_desktop_shortcut_button))
+                }
+            }
         }
 
         if (showSettings) {
@@ -148,11 +176,28 @@ fun WelcomeScreen(
                 onUseNewOpenCv5Chosen = onUseNewOpenCv5Chosen,
                 audioOutputDeviceId = audioOutputDeviceId,
                 onAudioOutputDeviceChosen = onAudioOutputDeviceChosen,
+                halveLeftRightImages = halveLeftRightImages,
+                onHalveLeftRightImagesChosen = onHalveLeftRightImagesChosen,
+                shrinkControls = shrinkControls,
+                onShrinkControlsChosen = onShrinkControlsChosen,
                 onOpenAbout = {
                     showSettings = false
                     onOpenAbout()
                 },
                 onDismiss = { showSettings = false },
+            )
+        }
+
+        if (showShortcutFailed) {
+            AlertDialog(
+                onDismissRequest = { showShortcutFailed = false },
+                title = { Text(stringResource(Res.string.welcome_desktop_shortcut_failed)) },
+                text = {},
+                confirmButton = {
+                    TextButton(onClick = { showShortcutFailed = false }) {
+                        Text(stringResource(Res.string.ok_button))
+                    }
+                },
             )
         }
 
@@ -171,7 +216,11 @@ fun WelcomeScreen(
     }
 }
 
-/** Opened by the welcome screen's gear: app-wide language, OpenCV and audio output settings. */
+/**
+ * Opened by the welcome screen's gear: app-wide language, OpenCV, display (halve left & right
+ * images, shrink controls - same persisted AppViewModel values as ImageScreen's settings menu
+ * toggles) and audio output settings.
+ */
 @Composable
 private fun WelcomeSettingsDialog(
     language: String?,
@@ -180,6 +229,10 @@ private fun WelcomeSettingsDialog(
     onUseNewOpenCv5Chosen: (Boolean) -> Unit,
     audioOutputDeviceId: String,
     onAudioOutputDeviceChosen: (String) -> Unit,
+    halveLeftRightImages: Boolean,
+    onHalveLeftRightImagesChosen: (Boolean) -> Unit,
+    shrinkControls: Boolean,
+    onShrinkControlsChosen: (Boolean) -> Unit,
     onOpenAbout: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -203,6 +256,18 @@ private fun WelcomeSettingsDialog(
                     Text(stringResource(Res.string.opencv5_toggle_label), modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
                     Switch(checked = useNewOpenCv5, onCheckedChange = onUseNewOpenCv5Chosen)
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(Res.string.image_settings_halve_left_right_toggle_label), modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    Switch(checked = halveLeftRightImages, onCheckedChange = { trackMenuItem("welcome_halve_left_right"); onHalveLeftRightImagesChosen(it) })
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(Res.string.image_settings_shrink_controls_toggle_label), modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    Switch(checked = shrinkControls, onCheckedChange = { trackMenuItem("welcome_shrink_controls"); onShrinkControlsChosen(it) })
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(stringResource(Res.string.image_settings_audio_output_label))

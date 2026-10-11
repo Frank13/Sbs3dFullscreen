@@ -1,38 +1,41 @@
 # Derives the PNG Store logo assets AppxManifest.xml references (packaging/msix/Assets/) from
-# src/commonMain/composeResources/drawable/icon.png (the 256x256 master the cube app icon is
-# already drawn at - much cleaner than upscaling icons/icon.ico's 32x32 embedded frame). Each tile
-# is the cube glyph centered on a round white badge, with safe-zone padding per Microsoft's Store
-# icon guidelines (https://learn.microsoft.com/windows/apps/design/style/app-icons-and-logos), not
-# a plain edge-to-edge resize. Re-run whenever icon.png changes.
+# src/commonMain/composeResources/drawable/icon.png (the 256x256 master the app icon is drawn at -
+# much cleaner than downscaling icons/icon.ico). icon.png already carries its own rounded-square
+# background and safe-zone padding, so each tile is just a high-quality edge-to-edge resize of it
+# (or of the square-cornered icons/icon-square.png for -Square tiles, see below): wrapping it in an
+# extra badge would shrink the glyph and make it unreadable at taskbar sizes.
+# Re-run whenever generate-app-icon.py has been re-run.
 
 Add-Type -AssemblyName System.Drawing
 
 $sourcePath = Join-Path $PSScriptRoot "..\src\commonMain\composeResources\drawable\icon.png"
+$squareSourcePath = Join-Path $PSScriptRoot "..\icons\icon-square.png"
 $outDir = Join-Path $PSScriptRoot "..\packaging\msix\Assets"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $source = [System.Drawing.Image]::FromFile($sourcePath)
+# The Store (and Start, for the 150x150 tile) applies its own corner mask, and paints transparent
+# pixels with the manifest's BackgroundColor or its own dark backdrop - so icon.png's transparent
+# rounded corners showed up there as black wedges. -Square tiles use this full-bleed variant instead.
+$squareSource = [System.Drawing.Image]::FromFile($squareSourcePath)
 
-function New-RoundBadge([string]$destName, [int]$size) {
+function New-Tile([string]$destName, [int]$size, [switch]$Square) {
+    $tileSource = if ($Square) { $squareSource } else { $source }
     $canvas = New-Object System.Drawing.Bitmap $size, $size
     $g = [System.Drawing.Graphics]::FromImage($canvas)
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
 
-    # White round badge, ~2% inset so the anti-aliased edge doesn't get clipped by the canvas rect.
-    $margin = [Math]::Round($size * 0.02)
-    $badgeRect = New-Object System.Drawing.Rectangle($margin, $margin, ($size - 2 * $margin), ($size - 2 * $margin))
-    $whiteBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
-    $g.FillEllipse($whiteBrush, $badgeRect)
-    $whiteBrush.Dispose()
-
-    # Cube glyph at ~66% of the canvas, centered - leaves safe-zone padding inside the circle so
-    # it isn't clipped by Windows' own further masking/scaling at small taskbar sizes.
-    $glyphSize = [Math]::Round($size * 0.66)
-    $glyphOffset = [Math]::Round(($size - $glyphSize) / 2)
-    $g.DrawImage($source, $glyphOffset, $glyphOffset, $glyphSize, $glyphSize)
+    # TileFlipXY wrap mode avoids the faint semi-transparent fringe GDI+ otherwise bleeds in along
+    # the edges when downscaling.
+    $attributes = New-Object System.Drawing.Imaging.ImageAttributes
+    $attributes.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
+    $destRect = New-Object System.Drawing.Rectangle(0, 0, $size, $size)
+    $g.DrawImage($tileSource, $destRect, 0, 0, $tileSource.Width, $tileSource.Height, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
+    $attributes.Dispose()
 
     $g.Dispose()
     $destPath = Join-Path $outDir $destName
@@ -41,17 +44,19 @@ function New-RoundBadge([string]$destName, [int]$size) {
     Write-Host "Wrote $destPath"
 }
 
-New-RoundBadge "Square44x44Logo.png" 44
-New-RoundBadge "Square150x150Logo.png" 150
-New-RoundBadge "StoreLogo.png" 50
+# Square44x44Logo is the taskbar / Start app-list icon: keep its rounded, transparent-cornered shape.
+New-Tile "Square44x44Logo.png" 44
+New-Tile "Square150x150Logo.png" 150 -Square
+New-Tile "StoreLogo.png" 50 -Square
 
 # Not part of the MSIX package itself (kept out of Assets/ so packageMsix's directory copy
 # doesn't bundle it in) - Partner Center's "Store listings" page separately asks for its own
-# 300x300 app icon upload. Same badge style as the package tiles above, so it's not a placeholder
-# either; upload packaging/msix/StoreListing/StoreListing300x300.png there by hand.
+# 300x300 app icon upload. Same full-size rendering as the package tiles above; upload
+# packaging/msix/StoreListing/StoreListing300x300.png there by hand.
 $listingDir = Join-Path $PSScriptRoot "..\packaging\msix\StoreListing"
 New-Item -ItemType Directory -Force -Path $listingDir | Out-Null
 $outDir = $listingDir
-New-RoundBadge "StoreListing300x300.png" 300
+New-Tile "StoreListing300x300.png" 300 -Square
 
+$squareSource.Dispose()
 $source.Dispose()

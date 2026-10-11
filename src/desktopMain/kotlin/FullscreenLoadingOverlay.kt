@@ -17,8 +17,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
-import sbs3dfullscreen.resources.Res
-import sbs3dfullscreen.resources.opening_fullscreen_message
+import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.opening_fullscreen_message
 
 /**
  * Shown while entering fullscreen (see Main.kt's isEnteringFullscreen), covering whatever's
