@@ -154,17 +154,22 @@ fun WelcomeScreen(
             }) {
                 Text(stringResource(Res.string.open_gallery_button))
             }
-            if (showDesktopShortcutButton) {
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = {
+        }
+
+        if (showDesktopShortcutButton) {
+            OutlinedButton(
+                onClick = {
                     scope.launch {
                         val created = withContext(Dispatchers.IO) { DesktopShortcut.create() }
                         Analytics.logEvent("create_desktop_shortcut", mapOf("success" to created))
                         if (created) showDesktopShortcutButton = false else showShortcutFailed = true
                     }
-                }) {
-                    Text(stringResource(Res.string.welcome_desktop_shortcut_button))
-                }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                Text(stringResource(Res.string.welcome_desktop_shortcut_button))
             }
         }
 
