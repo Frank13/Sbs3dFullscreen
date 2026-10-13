@@ -1,4 +1,11 @@
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -84,6 +91,8 @@ fun WelcomeScreen(
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
     onOpenAbout: () -> Unit,
+    // Overridable so the Store screenshot test can show the button outside the MSIX package.
+    initialShowDesktopShortcutButton: Boolean = DesktopShortcut.isAvailable && !DesktopShortcut.exists(),
 ) {
     val dialogTitle = stringResource(Res.string.file_dialog_title)
     val playlistDialogTitle = stringResource(Res.string.playlist_dialog_title)
@@ -91,7 +100,7 @@ fun WelcomeScreen(
     var importErrorFolderName by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     // Re-checked each time the welcome screen is shown, so deleting the shortcut brings the button back.
-    var showDesktopShortcutButton by remember { mutableStateOf(DesktopShortcut.isAvailable && !DesktopShortcut.exists()) }
+    var showDesktopShortcutButton by remember { mutableStateOf(initialShowDesktopShortcutButton) }
     var showShortcutFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -248,57 +257,80 @@ private fun WelcomeSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.image_settings_settings_label)) },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text(stringResource(Res.string.welcome_settings_language_label))
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val currentLanguage = language ?: LocalAppLocale.current.substring(0, 2)
-                    LanguageButton(label = "EN", selected = currentLanguage == "en", onClick = { onLanguageChosen("en") })
-                    LanguageButton(label = "FR", selected = currentLanguage == "fr", onClick = { onLanguageChosen("fr") })
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(Res.string.opencv5_toggle_label), modifier = Modifier.weight(1f))
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = useNewOpenCv5, onCheckedChange = onUseNewOpenCv5Chosen)
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(Res.string.image_settings_halve_left_right_toggle_label), modifier = Modifier.weight(1f))
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = halveLeftRightImages, onCheckedChange = { trackMenuItem("welcome_halve_left_right"); onHalveLeftRightImagesChosen(it) })
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(Res.string.image_settings_shrink_controls_toggle_label), modifier = Modifier.weight(1f))
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = shrinkControls, onCheckedChange = { trackMenuItem("welcome_shrink_controls"); onShrinkControlsChosen(it) })
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(Res.string.image_settings_audio_output_label))
-                if (audioDevices.isEmpty()) {
-                    Text(
-                        stringResource(Res.string.welcome_settings_audio_unavailable),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                audioDevices.forEach { device ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onAudioOutputDeviceChosen(device.deviceId) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = audioOutputDeviceId == device.deviceId,
-                            onClick = { onAudioOutputDeviceChosen(device.deviceId) },
+            val scrollState = rememberScrollState()
+            Box {
+                Column(modifier = Modifier.verticalScroll(scrollState)) {
+                    Text(stringResource(Res.string.welcome_settings_language_label))
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val currentLanguage = language ?: LocalAppLocale.current.substring(0, 2)
+                        LanguageButton(label = "EN", selected = currentLanguage == "en", onClick = { onLanguageChosen("en") })
+                        LanguageButton(label = "FR", selected = currentLanguage == "fr", onClick = { onLanguageChosen("fr") })
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(Res.string.opencv5_toggle_label), modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        Switch(checked = useNewOpenCv5, onCheckedChange = onUseNewOpenCv5Chosen)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(Res.string.image_settings_halve_left_right_toggle_label), modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        Switch(checked = halveLeftRightImages, onCheckedChange = { trackMenuItem("welcome_halve_left_right"); onHalveLeftRightImagesChosen(it) })
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(Res.string.image_settings_shrink_controls_toggle_label), modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        Switch(checked = shrinkControls, onCheckedChange = { trackMenuItem("welcome_shrink_controls"); onShrinkControlsChosen(it) })
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text(stringResource(Res.string.image_settings_audio_output_label))
+                    if (audioDevices.isEmpty()) {
+                        Text(
+                            stringResource(Res.string.welcome_settings_audio_unavailable),
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                        Text(device.longName)
+                    }
+                    audioDevices.forEach { device ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onAudioOutputDeviceChosen(device.deviceId) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = audioOutputDeviceId == device.deviceId,
+                                onClick = { onAudioOutputDeviceChosen(device.deviceId) },
+                            )
+                            Text(device.longName)
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(onClick = onOpenAbout) {
+                        Text(stringResource(Res.string.about_link_label))
                     }
                 }
-                Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onOpenAbout) {
-                    Text(stringResource(Res.string.about_link_label))
+                // Only shown once the content overflows the dialog's max height, so short
+                // settings lists don't get an empty scrollbar track. Offset by AlertDialog's 24dp
+                // content padding so it hugs the dialog's right edge instead of the text column's.
+                if (scrollState.maxValue > 0) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .wrapContentWidth(Alignment.End)
+                            .offset(x = 24.dp)
+                            .width(windowsScrollbarStyle.thickness)
+                            .background(windowsScrollbarTrackColor),
+                    ) {
+                        CompositionLocalProvider(LocalScrollbarStyle provides windowsScrollbarStyle) {
+                            VerticalScrollbar(
+                                adapter = rememberScrollbarAdapter(scrollState),
+                                modifier = Modifier.fillMaxHeight(),
+                            )
+                        }
+                    }
                 }
             }
         },

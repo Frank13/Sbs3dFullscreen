@@ -62,11 +62,13 @@ Run `git diff --stat <last-release-commit>..HEAD` on these files (and the string
 - a new screen or feature worth its own screenshot (then add a `@Test` that calls `captureScreenshot(...)` in `StoreScreenshotTest.kt` - never call `runDesktopComposeUiTest` directly);
 - a screenshot that shows removed or renamed UI.
 
-Finish this step with an explicit list: **"Screenshots to update on the Store: ..."** (or "none - all current screenshots are still accurate"). Do not run the app yourself; running `StoreScreenshotTest` is fine only if the user asks (it needs `sample_images/`), and uploading to Partner Center is always the user's job.
+Finish this step with an explicit list: **"Screenshots to update on the Store: ..."** (or "none - all current screenshots are still accurate").
+
+If any screenshot is outdated, **always ask the user** (one `AskUserQuestion`, header "Screenshots") whether to regenerate them now with `StoreScreenshotTest` (needs `sample_images/`) - never skip this question silently. If they accept, run it, check it passed, and list the regenerated files in `build/store-screenshots/` with their timestamps. Do not run the app itself, and uploading to Partner Center is always the user's job.
 
 ### 7. Wrap-up
 
-- Run `./gradlew.bat compileKotlinDesktop` to confirm it compiles.
+- Run `./gradlew.bat compileKotlinDesktop compileTestKotlinDesktop` to confirm both the app and the tests compile (a screen signature change silently breaks `StoreScreenshotTest` otherwise).
 - Check the open-source license list in `AboutScreen.kt` against `./gradlew.bat dependencies --configuration desktopRuntimeClasspath`: any new library must be listed with its license. Never add GPL/AGPL dependencies (closed-source / Store distribution).
 - Propose whether the new features deserve a Google Analytics event (`Analytics.kt`) - project rule.
 - Give a one-line summary per file changed, then the release commands: `./gradlew.bat packageMsix` (Store) and/or `packageMsi`/`packageExe`.

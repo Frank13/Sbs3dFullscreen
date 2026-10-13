@@ -95,9 +95,10 @@ private val thumbnailHeight = 160.dp
 private val thumbnailSpacing = 8.dp
 
 // Mimics the classic Windows scrollbar (flat rectangular thumb, ~17px wide, light-gray track)
-// instead of Compose Desktop's default thin/rounded/Mac-like style.
-private val windowsScrollbarTrackColor = Color(0xFFF0F0F0)
-private val windowsScrollbarStyle = ScrollbarStyle(
+// instead of Compose Desktop's default thin/rounded/Mac-like style. Also used by WelcomeScreen's
+// settings dialog.
+internal val windowsScrollbarTrackColor = Color(0xFFF0F0F0)
+internal val windowsScrollbarStyle = ScrollbarStyle(
     minimalHeight = 16.dp,
     thickness = 17.dp,
     shape = RectangleShape,

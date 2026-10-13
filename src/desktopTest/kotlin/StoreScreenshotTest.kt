@@ -104,6 +104,8 @@ class StoreScreenshotTest {
                 onHalveLeftRightImagesChosen = {},
                 shrinkControls = false,
                 onShrinkControlsChosen = {},
+                // Forced on: the test doesn't run inside the MSIX package, but Store users do.
+                initialShowDesktopShortcutButton = true,
             )
         }
     }
