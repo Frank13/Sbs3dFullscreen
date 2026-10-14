@@ -3,11 +3,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.net.HttpURLConnection
 import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
 import java.util.UUID
 import java.util.prefs.Preferences
 
@@ -55,9 +52,11 @@ object Analytics {
     private val apiSecret = System.getProperty("ga.apiSecret").orEmpty()
     private val isConfigured = measurementId.isNotBlank() && apiSecret.isNotBlank()
 
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build()
+    // Plain HttpURLConnection rather than java.net.http.HttpClient: HttpClient opens an NIO
+    // Selector, whose Windows wakeup pipe is an AF_UNIX socket that fails to connect on some
+    // machines ("Unable to establish loopback connection", seen on Store installs) - and since
+    // that happened in this object's initializer, it crashed the app at startup.
+    private const val TimeoutMillis = 5_000
     private val mapper = jacksonObjectMapper()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -87,12 +86,19 @@ object Analytics {
         val json = mapper.writeValueAsString(body)
         scope.launch {
             try {
-                val request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://www.google-analytics.com/mp/collect?measurement_id=$measurementId&api_secret=$apiSecret"))
-                    .timeout(Duration.ofSeconds(5))
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build()
-                httpClient.send(request, HttpResponse.BodyHandlers.discarding())
+                val url = URI.create("https://www.google-analytics.com/mp/collect?measurement_id=$measurementId&api_secret=$apiSecret").toURL()
+                val connection = url.openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = TimeoutMillis
+                    connection.readTimeout = TimeoutMillis
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    connection.responseCode
+                } finally {
+                    connection.disconnect()
+                }
             } catch (_: Exception) {
                 // Best-effort telemetry: a failed send must never surface to the user or crash the app.
             }
