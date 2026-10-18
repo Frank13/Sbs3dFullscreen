@@ -114,15 +114,23 @@ fun AboutScreen(onBack: () -> Unit) {
         snackbarHostState = snackbarHostState,
         screenContent = {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                Image(
-                    painter = painterResource(Res.drawable.icon),
-                    contentDescription = null,
+                // The circle is 1.25x the icon so neither the monitor's corners nor the icon's own
+                // rounded tile get clipped; its fill matches the tile color (TILE in
+                // tools/generate-app-icon.py) so the tile blends seamlessly into the circle.
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(120.dp)
                         .clip(CircleShape)
-                        .background(Color.Black)
+                        .background(Color(0xFFE8F1F2))
                         .align(Alignment.CenterHorizontally),
-                )
+                ) {
+                    Image(
+                        painter = painterResource(Res.drawable.icon),
+                        contentDescription = null,
+                        modifier = Modifier.size(96.dp),
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Text(stringResource(Res.string.about_purpose_text))
                 Spacer(Modifier.height(16.dp))
