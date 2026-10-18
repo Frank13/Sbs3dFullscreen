@@ -5,6 +5,7 @@ package fr.camera3d.camera.feature_playlists.domain
 
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.PlaylistToYAML
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.getYamlPlaylistFromYaml
+import fr.camera3d.camera.feature_playlists.service.yamlImporter.toFullscreenScroll
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.toTextStyleConfig
 import java.io.File
 
@@ -32,6 +33,7 @@ data class Playlist(
     val titleStyle : TextStyleConfig = TextStyleConfig.TITLE_DEFAULT, // font/color/position style of the title on the title slide
     val subtitleStyle : TextStyleConfig = TextStyleConfig.SUBTITLE_DEFAULT, // font/color/position style of the subtitle on the title slide
     val isAutomated : Boolean = true, // true: slideshow auto-advances after defaultDurationS; false: user advances slides manually
+    val scrollSpeedLimitPercent : Float = 5f, // max scrolling speed of "force fullscreen by scrolling" photos, in % of the screen per second (<= 0: no limit); extends their slide duration if needed
     val soundtrack : List<String> = listOf(), // mp3 filenames (in the playlist folder) played one after the other during the slideshow
     var photos : List<PlaylistItem> = listOf() // list of playlists
 ){
@@ -115,13 +117,13 @@ data class Playlist(
             val items = if (!buildUris) {
                 // Shallow load: placeholder uris, no file system access at all
                 p.photos.map {
-                    PlaylistItem(it.filename, "", it.comment, it.commentAnchor, it.commentZ, it.commentColor, it.transition, it.duration, it.isHalfWidth, it.isVideo, it.isMuted)
+                    PlaylistItem(it.filename, "", it.comment, it.commentAnchor, it.commentZ, it.commentColor, it.transition, it.duration, it.isHalfWidth, it.isVideo, it.isMuted, it.fullscreenScroll.toFullscreenScroll())
                 }
             } else {
                 p.photos.mapNotNull {
                     try {
                         val uri = storage.resolvePhotoUri(fullPlaylistFolder, playlistFolder, it.filename, withFileVerification)
-                        PlaylistItem(it.filename, uri, it.comment, it.commentAnchor, it.commentZ, it.commentColor, it.transition, it.duration, it.isHalfWidth, it.isVideo, it.isMuted)
+                        PlaylistItem(it.filename, uri, it.comment, it.commentAnchor, it.commentZ, it.commentColor, it.transition, it.duration, it.isHalfWidth, it.isVideo, it.isMuted, it.fullscreenScroll.toFullscreenScroll())
                     } catch (e: Exception){
                         null
                     }
@@ -131,7 +133,7 @@ data class Playlist(
             return Playlist(p.name, type, absoluteFolder, p.defaultDuration, p.defaultTransition, p.soundFilename, p.subtitle, p.titleZ, p.subtitleZ,
                 titleStyle = p.titleStyle.toTextStyleConfig(TextStyleConfig.TITLE_DEFAULT),
                 subtitleStyle = p.subtitleStyle.toTextStyleConfig(TextStyleConfig.SUBTITLE_DEFAULT),
-                isAutomated = p.isAutomated, soundtrack = p.soundtrack, photos = items)
+                isAutomated = p.isAutomated, scrollSpeedLimitPercent = p.scrollSpeedLimitPercent, soundtrack = p.soundtrack, photos = items)
         }
 
         /**

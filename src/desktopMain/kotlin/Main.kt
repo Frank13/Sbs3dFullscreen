@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -18,23 +19,33 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowExceptionHandler
+import androidx.compose.ui.window.WindowExceptionHandlerFactory
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import fr.camera3d.camera.feature_playlists.ui.fullscreenScrollDurationMs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.crash_loop_message
 import sbs3dViewer.resources.icon
 import sbs3dViewer.resources.playlist_add_music_dialog_title
 import sbs3dViewer.resources.playlist_add_photos_directory_dialog_title
 import java.io.File
+import javax.swing.JOptionPane
+import javax.swing.SwingUtilities
 import kotlin.time.Duration.Companion.milliseconds
 
 fun main(args: Array<String>) {
     try {
+        CrashReporting.install()
         runApp(args)
     } catch (t: Throwable) {
         reportStartupCrash(t)
@@ -44,10 +55,11 @@ fun main(args: Array<String>) {
 
 // The packaged app's jpackage launcher turns any exception escaping main() into a bare "Failed to
 // launch JVM" box with no stack trace, so surface the real error: shown in a dialog and saved to
-// ~/sbs3dViewer-crash.log (the user profile root, which MSIX doesn't virtualize unlike AppData).
+// ~/sbs3dViewer-crash.log (see CrashReporting), and sent to Sentry with consent.
 private fun reportStartupCrash(t: Throwable) {
     val trace = t.stackTraceToString()
-    runCatching { File(System.getProperty("user.home"), "sbs3dViewer-crash.log").writeText(trace) }
+    CrashReporting.report(t, source = "startup")
+    CrashReporting.flush()
     runCatching {
         val text = javax.swing.JTextArea(trace, 25, 100).apply { isEditable = false }
         javax.swing.JOptionPane.showMessageDialog(
@@ -191,565 +203,633 @@ private fun runApp(args: Array<String>) = application {
         viewModel.closeImageView()
     }
 
+    // Bumped by the window exception handler below to throw away a crashed Window and compose a
+    // fresh one (via the same key() that handles undecorated changes).
+    var windowGeneration by remember { mutableStateOf(0) }
+    var showCrashRecoveredDialog by remember { mutableStateOf(false) }
+    val recentWindowCrashesMs = remember { ArrayDeque<Long>() }
+
+    // Replaces Compose's default handler (error dialog, then close the window - which, as the only
+    // window, quits the app) for exceptions thrown while composing/drawing/handling input: report
+    // it, then reset to Welcome in a new window. A crash loop (e.g. Welcome itself throwing) still
+    // quits, after telling the user.
+    @OptIn(ExperimentalComposeUiApi::class)
+    val windowExceptionHandlerFactory = remember {
+        WindowExceptionHandlerFactory { _ ->
+            var handled = false
+            WindowExceptionHandler { throwable ->
+                // A broken composition keeps throwing on every frame until the window is gone.
+                if (handled) return@WindowExceptionHandler
+                handled = true
+                CrashReporting.report(throwable, source = "window")
+                val now = System.currentTimeMillis()
+                recentWindowCrashesMs.addLast(now)
+                while (recentWindowCrashesMs.first() < now - 30_000) recentWindowCrashesMs.removeFirst()
+                // Deferred: the handler runs mid-frame, inside the very scene being torn down.
+                SwingUtilities.invokeLater {
+                    if (recentWindowCrashesMs.size >= 3) {
+                        CrashReporting.flush()
+                        val message = runCatching { runBlocking { getString(Res.string.crash_loop_message) } }
+                            .getOrDefault(throwable.toString())
+                        JOptionPane.showMessageDialog(null, message, "SBS 3D Viewer", JOptionPane.ERROR_MESSAGE)
+                        exitApplication()
+                        return@invokeLater
+                    }
+                    if (viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView) {
+                        windowState.placement = previousPlacement
+                        windowState.size = previousSize
+                        windowState.position = previousPosition
+                    }
+                    showImageInfoPanel = false
+                    imageDialogShown = false
+                    isEnteringFullscreen = false
+                    viewModel.resetAfterCrash()
+                    showCrashRecoveredDialog = true
+                    windowGeneration++
+                }
+            }
+        }
+    }
+
     // undecorated can only be set before the window's peer is created, so the
     // whole Window is disposed and recreated (via key()) whenever it changes.
-    key(undecorated) {
-        Window(
-            onCloseRequest = ::exitApplication,
-            state = windowState,
-            title = "SBS 3D Viewer",
-            undecorated = undecorated,
-            icon = painterResource(Res.drawable.icon),
-        ) {
-            LaunchedEffect(viewModel.screen) {
-                focusRequester.requestFocus()
-            }
-
-            LaunchedEffect(viewModel.screen) {
-                Analytics.logEvent("screen_view", mapOf("screen_name" to viewModel.screen.name))
-            }
-
-            LaunchedEffect(viewModel.alignToast) {
-                viewModel.alignToast?.let { toast ->
-                    if (!toast.success) Analytics.logEvent("app_error", mapOf("type" to "align"))
+    @OptIn(ExperimentalComposeUiApi::class)
+    CompositionLocalProvider(LocalWindowExceptionHandlerFactory provides windowExceptionHandlerFactory) {
+        key(undecorated, windowGeneration) {
+            Window(
+                onCloseRequest = ::exitApplication,
+                state = windowState,
+                title = "SBS 3D Viewer",
+                undecorated = undecorated,
+                icon = painterResource(Res.drawable.icon),
+            ) {
+                LaunchedEffect(viewModel.screen) {
+                    focusRequester.requestFocus()
                 }
-            }
 
-            LaunchedEffect(viewModel.saveToast) {
-                viewModel.saveToast?.let { toast ->
-                    if (!toast.success) Analytics.logEvent("app_error", mapOf("type" to "save"))
+                LaunchedEffect(viewModel.screen) {
+                    Analytics.logEvent("screen_view", mapOf("screen_name" to viewModel.screen.name))
                 }
-            }
 
-            LaunchedEffect(viewModel.share.toast) {
-                // Only ever bumped on Share.EmailResult.FAILED - see ShareToast's doc comment.
-                if (viewModel.share.toast != null) Analytics.logEvent("app_error", mapOf("type" to "share"))
-            }
-
-            // Clears isEnteringFullscreen for the paths that don't decode a photo (a playlist's
-            // title/end slide, a standalone video, or a video mid-playlist - VideoScreen/
-            // PlaylistVideoSlide show their own black screen until the first frame arrives). The
-            // photo path instead clears it via ImageScreen's onImageLoaded.
-            LaunchedEffect(viewModel.screen, viewModel.playlistSlideKind, viewModel.currentPlaylistItem) {
-                if (isEnteringFullscreen &&
-                    (viewModel.screen == Screen.VideoView ||
-                        (viewModel.screen == Screen.ImageView && viewModel.playlistSlideKind != null &&
-                            (viewModel.playlistSlideKind != PlaylistSlideKind.PHOTO || viewModel.currentPlaylistItem?.isVideo == true)))
-                ) {
-                    finishEnteringFullscreen()
+                LaunchedEffect(viewModel.alignToast) {
+                    viewModel.alignToast?.let { toast ->
+                        if (!toast.success) Analytics.logEvent("app_error", mapOf("type" to "align"))
+                    }
                 }
-            }
 
-            // Decodes the immediate Next/Previous neighbors into ImageDecodeCache ahead of time,
-            // so a Next/Previous press usually lands on an already-decoded bitmap instead of
-            // blocking on a fresh disk read + JPEG decode - see ImageScreen's use of the same
-            // cache. Harmless to run for a playlist's title/end slide (currentImage is null there,
-            // index just out of imageFiles' bounds) or a video (ImageDecodeCache.warm no-ops on
-            // non-photo extensions).
-            LaunchedEffect(viewModel.screen, viewModel.imageFiles, viewModel.currentImageIndex) {
-                if (viewModel.screen == Screen.ImageView) {
-                    viewModel.imageFiles.getOrNull(viewModel.currentImageIndex - 1)?.let(ImageDecodeCache::warm)
-                    viewModel.imageFiles.getOrNull(viewModel.currentImageIndex + 1)?.let(ImageDecodeCache::warm)
+                LaunchedEffect(viewModel.saveToast) {
+                    viewModel.saveToast?.let { toast ->
+                        if (!toast.success) Analytics.logEvent("app_error", mapOf("type" to "save"))
+                    }
                 }
-            }
 
-            CompositionLocalProvider(LocalAppLocale provides viewModel.language) {
-                // stringResource() re-reads Locale.getDefault() when it's newly composed,
-                // so the subtree must be recreated (via key()) whenever the language changes.
-                key(viewModel.language) {
-                    AppTheme {
-                        val inViewer = viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .focusRequester(focusRequester)
-                                .focusable()
-                                .onPreviewKeyEvent { event ->
-                                    if (imageDialogShown) {
-                                        // Leave every key untouched (see imageDialogShown's doc) so
-                                        // it reaches the in-scene dialog's own TextField/buttons
-                                        // instead of being swallowed as an app-wide shortcut -
-                                        // Escape closing the dialog, Space typing a literal space,
-                                        // and arrow keys moving the text caret all rely on this.
-                                        false
-                                    } else if (viewModel.photoTools.manualAlignMode) {
-                                        // Arrow keys nudge the pending offset (see the tick-loop
-                                        // LaunchedEffect above) instead of navigating; Escape
-                                        // cancels the alignment instead of exiting fullscreen (resets
-                                        // the offset, stays in fullscreen); Shift/Ctrl still toggles
-                                        // the info panel as usual (harmless - it doesn't touch the
-                                        // pending offset or navigate away); every other key-down is
-                                        // swallowed so nothing else - navigation, auto-align's "A"
-                                        // shortcut - can mutate state out from under the pending
-                                        // offset while it's active.
-                                        if (event.key in manualAlignDirectionKeys) {
-                                            when (event.type) {
-                                                KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
-                                                KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
-                                                else -> {}
-                                            }
-                                            true
-                                        } else if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                                            viewModel.cancelManualAlign()
-                                            true
-                                        } else if (event.type == KeyEventType.KeyDown &&
-                                            (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                        ) {
-                                            showImageInfoPanel = !showImageInfoPanel
-                                            true
-                                        } else {
-                                            event.type == KeyEventType.KeyDown
-                                        }
-                                    } else if (viewModel.photoTools.cropMode) {
-                                        // Same swallow-everything-except-Escape/Shift/Ctrl treatment
-                                        // as manualAlignMode above: Escape cancels the crop tool
-                                        // (discards any drawn rectangle) instead of exiting
-                                        // fullscreen, and nothing else - navigation, auto-align's
-                                        // "A" shortcut - should be able to mutate state while a
-                                        // crop rectangle is pending Save/Cancel.
-                                        when (event.type) {
-                                            KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                viewModel.cancelCrop()
-                                                true
-                                            }
+                LaunchedEffect(viewModel.share.toast) {
+                    // Only ever bumped on Share.EmailResult.FAILED - see ShareToast's doc comment.
+                    if (viewModel.share.toast != null) Analytics.logEvent("app_error", mapOf("type" to "share"))
+                }
 
-                                            KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                                -> {
-                                                showImageInfoPanel = !showImageInfoPanel
-                                                true
-                                            }
+                // Clears isEnteringFullscreen for the paths that don't decode a photo (a playlist's
+                // title/end slide, a standalone video, or a video mid-playlist - VideoScreen/
+                // PlaylistVideoSlide show their own black screen until the first frame arrives). The
+                // photo path instead clears it via ImageScreen's onImageLoaded.
+                LaunchedEffect(viewModel.screen, viewModel.playlistSlideKind, viewModel.currentPlaylistItem) {
+                    if (isEnteringFullscreen &&
+                        (viewModel.screen == Screen.VideoView ||
+                            (viewModel.screen == Screen.ImageView && viewModel.playlistSlideKind != null &&
+                                (viewModel.playlistSlideKind != PlaylistSlideKind.PHOTO || viewModel.currentPlaylistItem?.isVideo == true)))
+                    ) {
+                        finishEnteringFullscreen()
+                    }
+                }
 
-                                            else -> {
-                                                event.type == KeyEventType.KeyDown
-                                            }
-                                        }
-                                    } else if (viewModel.photoTools.spotIssuesMode) {
-                                        // Same swallow-everything-except-Escape/Shift/Ctrl treatment
-                                        // as cropMode above: Escape cancels the "Spot stereo issues"
-                                        // tool (discards any drawn rectangles) instead of exiting
-                                        // fullscreen.
-                                        when (event.type) {
-                                            KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                viewModel.cancelSpotIssues()
-                                                true
-                                            }
+                // Decodes the immediate Next/Previous neighbors into ImageDecodeCache ahead of time,
+                // so a Next/Previous press usually lands on an already-decoded bitmap instead of
+                // blocking on a fresh disk read + JPEG decode - see ImageScreen's use of the same
+                // cache. Harmless to run for a playlist's title/end slide (currentImage is null there,
+                // index just out of imageFiles' bounds) or a video (ImageDecodeCache.warm no-ops on
+                // non-photo extensions).
+                LaunchedEffect(viewModel.screen, viewModel.imageFiles, viewModel.currentImageIndex) {
+                    if (viewModel.screen == Screen.ImageView) {
+                        viewModel.imageFiles.getOrNull(viewModel.currentImageIndex - 1)?.let(ImageDecodeCache::warm)
+                        viewModel.imageFiles.getOrNull(viewModel.currentImageIndex + 1)?.let(ImageDecodeCache::warm)
+                    }
+                }
 
-                                            KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                                -> {
-                                                showImageInfoPanel = !showImageInfoPanel
-                                                true
-                                            }
-
-                                            else -> {
-                                                event.type == KeyEventType.KeyDown
-                                            }
-                                        }
-                                    } else if (viewModel.photoTools.clickAlignMode) {
-                                        // Same swallow-everything-except-Escape treatment as
-                                        // cropMode/spotIssuesMode above, except Shift and Ctrl are
-                                        // split apart instead of both toggling the info panel: Ctrl
-                                        // still does (unchanged), but Shift is repurposed to drive
-                                        // the Shift-held alignment preview (see ClickAlign.Preview
-                                        // and ImageScreen's clickAlignPreviewActive branch) - the
-                                        // info panel is already open by definition here (that's how
-                                        // the user reached this tool), so there's nothing useful for
-                                        // Shift to toggle instead.
-                                        when (event.type) {
-                                            KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                viewModel.cancelClickAlign()
-                                                true
-                                            }
-
-                                            KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
-                                                viewModel.setClickAlignPreviewActive(true)
-                                                true
-                                            }
-
-                                            KeyEventType.KeyUp if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
-                                                viewModel.setClickAlignPreviewActive(false)
-                                                true
-                                            }
-
-                                            KeyEventType.KeyDown if (event.key == Key.CtrlLeft || event.key == Key.CtrlRight) -> {
-                                                showImageInfoPanel = !showImageInfoPanel
-                                                true
-                                            }
-
-                                            else -> {
-                                                event.type == KeyEventType.KeyDown
-                                            }
-                                        }
-                                    } else {
-                                        // Toggles on the key-down of Shift/Ctrl itself (not on every
-                                        // event where one happens to be held as a modifier), so a
-                                        // press opens the panel and the next press closes it again -
-                                        // holding the key no longer matters.
-                                        if (inViewer && event.type == KeyEventType.KeyDown &&
-                                            (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                        ) {
-                                            showImageInfoPanel = !showImageInfoPanel
-                                        }
-                                        if (!inViewer || event.type != KeyEventType.KeyDown) {
+                CompositionLocalProvider(LocalAppLocale provides viewModel.language) {
+                    // stringResource() re-reads Locale.getDefault() when it's newly composed,
+                    // so the subtree must be recreated (via key()) whenever the language changes.
+                    key(viewModel.language) {
+                        AppTheme {
+                            val inViewer = viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(focusRequester)
+                                    .focusable()
+                                    .onPreviewKeyEvent { event ->
+                                        if (imageDialogShown) {
+                                            // Leave every key untouched (see imageDialogShown's doc) so
+                                            // it reaches the in-scene dialog's own TextField/buttons
+                                            // instead of being swallowed as an app-wide shortcut -
+                                            // Escape closing the dialog, Space typing a literal space,
+                                            // and arrow keys moving the text caret all rely on this.
                                             false
-                                        } else when (event.key) {
-                                            Key.Escape -> {
-                                                exitFullscreen()
-                                                true
-                                            }
-                                            Key.Spacebar, Key.DirectionRight -> {
-                                                viewModel.showNextImage()
-                                                true
-                                            }
-                                            Key.DirectionLeft -> {
-                                                viewModel.showPreviousImage()
-                                                true
-                                            }
-                                            Key.A -> {
-                                                // Runs on a background thread via performAutoAlign
-                                                // (same path as AlignButtonsRow's Correct zoom button),
-                                                // which also no-ops if a task is already running.
-                                                // Only meaningful for still images, not video.
-                                                if (viewModel.screen == Screen.ImageView) {
-                                                    viewModel.currentImage?.let { file ->
-                                                        coroutineScope.launch {
-                                                            viewModel.performAutoAlign(file, AlignKind.AFFINE)
-                                                        }
-                                                    }
+                                        } else if (viewModel.photoTools.manualAlignMode) {
+                                            // Arrow keys nudge the pending offset (see the tick-loop
+                                            // LaunchedEffect above) instead of navigating; Escape
+                                            // cancels the alignment instead of exiting fullscreen (resets
+                                            // the offset, stays in fullscreen); Shift/Ctrl still toggles
+                                            // the info panel as usual (harmless - it doesn't touch the
+                                            // pending offset or navigate away); every other key-down is
+                                            // swallowed so nothing else - navigation, auto-align's "A"
+                                            // shortcut - can mutate state out from under the pending
+                                            // offset while it's active.
+                                            if (event.key in manualAlignDirectionKeys) {
+                                                when (event.type) {
+                                                    KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
+                                                    KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
+                                                    else -> {}
                                                 }
                                                 true
+                                            } else if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                                                viewModel.cancelManualAlign()
+                                                true
+                                            } else if (event.type == KeyEventType.KeyDown &&
+                                                (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
+                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
+                                            ) {
+                                                showImageInfoPanel = !showImageInfoPanel
+                                                true
+                                            } else {
+                                                event.type == KeyEventType.KeyDown
                                             }
-                                            else -> false
+                                        } else if (viewModel.photoTools.cropMode) {
+                                            // Same swallow-everything-except-Escape/Shift/Ctrl treatment
+                                            // as manualAlignMode above: Escape cancels the crop tool
+                                            // (discards any drawn rectangle) instead of exiting
+                                            // fullscreen, and nothing else - navigation, auto-align's
+                                            // "A" shortcut - should be able to mutate state while a
+                                            // crop rectangle is pending Save/Cancel.
+                                            when (event.type) {
+                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
+                                                    viewModel.cancelCrop()
+                                                    true
+                                                }
+
+                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
+                                                        event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
+                                                    -> {
+                                                    showImageInfoPanel = !showImageInfoPanel
+                                                    true
+                                                }
+
+                                                else -> {
+                                                    event.type == KeyEventType.KeyDown
+                                                }
+                                            }
+                                        } else if (viewModel.photoTools.spotIssuesMode) {
+                                            // Same swallow-everything-except-Escape/Shift/Ctrl treatment
+                                            // as cropMode above: Escape cancels the "Spot stereo issues"
+                                            // tool (discards any drawn rectangles) instead of exiting
+                                            // fullscreen.
+                                            when (event.type) {
+                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
+                                                    viewModel.cancelSpotIssues()
+                                                    true
+                                                }
+
+                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
+                                                        event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
+                                                    -> {
+                                                    showImageInfoPanel = !showImageInfoPanel
+                                                    true
+                                                }
+
+                                                else -> {
+                                                    event.type == KeyEventType.KeyDown
+                                                }
+                                            }
+                                        } else if (viewModel.photoTools.clickAlignMode) {
+                                            // Same swallow-everything-except-Escape treatment as
+                                            // cropMode/spotIssuesMode above, except Shift and Ctrl are
+                                            // split apart instead of both toggling the info panel: Ctrl
+                                            // still does (unchanged), but Shift is repurposed to drive
+                                            // the Shift-held alignment preview (see ClickAlign.Preview
+                                            // and ImageScreen's clickAlignPreviewActive branch) - the
+                                            // info panel is already open by definition here (that's how
+                                            // the user reached this tool), so there's nothing useful for
+                                            // Shift to toggle instead.
+                                            when (event.type) {
+                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
+                                                    viewModel.cancelClickAlign()
+                                                    true
+                                                }
+
+                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
+                                                    viewModel.setClickAlignPreviewActive(true)
+                                                    true
+                                                }
+
+                                                KeyEventType.KeyUp if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
+                                                    viewModel.setClickAlignPreviewActive(false)
+                                                    true
+                                                }
+
+                                                KeyEventType.KeyDown if (event.key == Key.CtrlLeft || event.key == Key.CtrlRight) -> {
+                                                    showImageInfoPanel = !showImageInfoPanel
+                                                    true
+                                                }
+
+                                                else -> {
+                                                    event.type == KeyEventType.KeyDown
+                                                }
+                                            }
+                                        } else {
+                                            // Toggles on the key-down of Shift/Ctrl itself (not on every
+                                            // event where one happens to be held as a modifier), so a
+                                            // press opens the panel and the next press closes it again -
+                                            // holding the key no longer matters.
+                                            if (inViewer && event.type == KeyEventType.KeyDown &&
+                                                (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
+                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
+                                            ) {
+                                                showImageInfoPanel = !showImageInfoPanel
+                                            }
+                                            if (!inViewer || event.type != KeyEventType.KeyDown) {
+                                                false
+                                            } else when (event.key) {
+                                                Key.Escape -> {
+                                                    exitFullscreen()
+                                                    true
+                                                }
+                                                Key.Spacebar, Key.DirectionRight -> {
+                                                    viewModel.showNextImage()
+                                                    true
+                                                }
+                                                Key.DirectionLeft -> {
+                                                    viewModel.showPreviousImage()
+                                                    true
+                                                }
+                                                Key.A -> {
+                                                    // Runs on a background thread via performAutoAlign
+                                                    // (same path as AlignButtonsRow's Correct zoom button),
+                                                    // which also no-ops if a task is already running.
+                                                    // Only meaningful for still images, not video.
+                                                    if (viewModel.screen == Screen.ImageView) {
+                                                        viewModel.currentImage?.let { file ->
+                                                            coroutineScope.launch {
+                                                                viewModel.performAutoAlign(file, AlignKind.AFFINE)
+                                                            }
+                                                        }
+                                                    }
+                                                    true
+                                                }
+                                                else -> false
+                                            }
                                         }
                                     }
+                            ) {
+                                // Undecorated + Maximized ("borderless fullscreen") rather than
+                                // WindowPlacement.Fullscreen: on Windows, Fullscreen puts the window
+                                // into real OS exclusive full-screen mode (GraphicsDevice.fullScreenWindow),
+                                // which Windows auto-minimizes if the window loses focus - e.g. when the
+                                // 3D monitor's own "activate 3D" popup steals focus. Maximized is a normal
+                                // window, so it just deactivates instead of getting iconified.
+                                fun enterFullscreen() {
+                                    previousPlacement = windowState.placement
+                                    previousSize = windowState.size
+                                    previousPosition = windowState.position
+                                    windowState.placement = WindowPlacement.Maximized
+                                    isEnteringFullscreen = true
+                                    enteredFullscreenAtMs = System.currentTimeMillis()
                                 }
-                        ) {
-                            // Undecorated + Maximized ("borderless fullscreen") rather than
-                            // WindowPlacement.Fullscreen: on Windows, Fullscreen puts the window
-                            // into real OS exclusive full-screen mode (GraphicsDevice.fullScreenWindow),
-                            // which Windows auto-minimizes if the window loses focus - e.g. when the
-                            // 3D monitor's own "activate 3D" popup steals focus. Maximized is a normal
-                            // window, so it just deactivates instead of getting iconified.
-                            fun enterFullscreen() {
-                                previousPlacement = windowState.placement
-                                previousSize = windowState.size
-                                previousPosition = windowState.position
-                                windowState.placement = WindowPlacement.Maximized
-                                isEnteringFullscreen = true
-                                enteredFullscreenAtMs = System.currentTimeMillis()
-                            }
 
-                            when (viewModel.screen) {
-                                Screen.Welcome -> WelcomeScreen(
-                                    window = window,
-                                    language = viewModel.language,
-                                    onLanguageChosen = viewModel::onLanguageChosen,
-                                    useNewOpenCv5 = viewModel.useNewOpenCv5,
-                                    onUseNewOpenCv5Chosen = viewModel::onUseNewOpenCv5Chosen,
-                                    audioOutputDeviceId = viewModel.audioOutputDeviceId,
-                                    onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
-                                    halveLeftRightImages = viewModel.halveLeftRightImages,
-                                    onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
-                                    shrinkControls = viewModel.shrinkControls,
-                                    onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
-                                    onFilesChosen = { files ->
-                                        if (viewModel.onFilesChosen(files)) enterFullscreen()
-                                    },
-                                    onImportPlaylist = { folder ->
-                                        viewModel.importPlaylistFolder(folder)
-                                    },
-                                    onOpenPlaylistList = { viewModel.openPlaylistList() },
-                                    onOpenGallery = { folder -> viewModel.openGallery(folder) },
-                                    onOpenAbout = { viewModel.openAbout() },
-                                )
-
-                                Screen.About -> AboutScreen(onBack = { viewModel.closeAbout() })
-
-                                Screen.Gallery -> GalleryScreen(
-                                    groups = viewModel.gallery.groups,
-                                    expandedGroups = viewModel.gallery.expandedGroups,
-                                    listState = galleryListState,
-                                    scrollTarget = viewModel.gallery.scrollTarget,
-                                    onScrollTargetConsumed = { viewModel.consumeGalleryScrollTarget() },
-                                    onToggleGroup = { path -> viewModel.toggleGalleryGroup(path) },
-                                    onOpenImage = { group, index ->
-                                        if (viewModel.openGalleryImage(group, index)) enterFullscreen()
-                                    },
-                                    onBack = {
-                                        if (viewModel.gallery.pickerMode) viewModel.cancelGalleryPicker() else viewModel.closeGallery()
-                                    },
-                                    pickerMode = viewModel.gallery.pickerMode,
-                                    selectedFiles = viewModel.gallery.selectedFiles,
-                                    onToggleSelect = { file -> viewModel.toggleGallerySelection(file) },
-                                    onConfirmSelection = { viewModel.confirmGalleryPicker() },
-                                )
-
-                                Screen.PlaylistList -> PlaylistsScreen(
-                                    playlists = viewModel.playlistEditor.all,
-                                    onBack = { viewModel.closePlaylistList() },
-                                    onRefresh = { viewModel.refreshPlaylistList() },
-                                    onOpenPlaylist = { playlist -> viewModel.openPlaylistForEdit(playlist) },
-                                    onPlayPlaylist = { playlist ->
-                                        val started = viewModel.playPlaylist(playlist)
-                                        if (started) enterFullscreen()
-                                        started
-                                    },
-                                    onCreatePlaylist = { name ->
-                                        viewModel.startCreatePlaylist(name)
-                                    },
-                                    canCreatePlaylist = viewModel::canCreatePlaylist,
-                                )
-
-                                Screen.PlaylistEdit -> viewModel.playlistEditor.editing?.let { playlist ->
-                                    val addPhotosDirectoryDialogTitle = stringResource(Res.string.playlist_add_photos_directory_dialog_title)
-                                    val addMusicDialogTitle = stringResource(Res.string.playlist_add_music_dialog_title)
-                                    PlaylistScreen(
-                                        playlist = playlist,
-                                        onAddMusic = {
-                                            val files = chooseMusicFiles(window = window, title = addMusicDialogTitle, extensions = arrayOf("mp3", "m4a", "wav", "ogg", "flac"))
-                                            if (files.isNotEmpty()) viewModel.addSoundtrackToEditingPlaylist(files)
+                                when (viewModel.screen) {
+                                    Screen.Welcome -> WelcomeScreen(
+                                        window = window,
+                                        language = viewModel.language,
+                                        onLanguageChosen = viewModel::onLanguageChosen,
+                                        useNewOpenCv5 = viewModel.useNewOpenCv5,
+                                        onUseNewOpenCv5Chosen = viewModel::onUseNewOpenCv5Chosen,
+                                        audioOutputDeviceId = viewModel.audioOutputDeviceId,
+                                        onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
+                                        halveLeftRightImages = viewModel.halveLeftRightImages,
+                                        onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
+                                        shrinkControls = viewModel.shrinkControls,
+                                        onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
+                                        onFilesChosen = { files ->
+                                            if (viewModel.onFilesChosen(files)) enterFullscreen()
                                         },
-                                        onRemoveSoundtrackItem = viewModel::removeSoundtrackItem,
-                                        onAddPhotos = {
-                                            chooseDirectory(window = window, title = addPhotosDirectoryDialogTitle)?.let { folder ->
-                                                viewModel.openGalleryForPicking(folder)
-                                            }
+                                        onImportPlaylist = { folder ->
+                                            viewModel.importPlaylistFolder(folder)
                                         },
-                                        onPlay = {
-                                            val started = viewModel.playEditingPlaylist()
+                                        onOpenPlaylistList = { viewModel.openPlaylistList() },
+                                        onOpenGallery = { folder -> viewModel.openGallery(folder) },
+                                        onOpenAbout = { viewModel.openAbout() },
+                                    )
+
+                                    Screen.About -> AboutScreen(onBack = { viewModel.closeAbout() })
+
+                                    Screen.Gallery -> GalleryScreen(
+                                        groups = viewModel.gallery.groups,
+                                        expandedGroups = viewModel.gallery.expandedGroups,
+                                        listState = galleryListState,
+                                        scrollTarget = viewModel.gallery.scrollTarget,
+                                        onScrollTargetConsumed = { viewModel.consumeGalleryScrollTarget() },
+                                        onToggleGroup = { path -> viewModel.toggleGalleryGroup(path) },
+                                        onOpenImage = { group, index ->
+                                            if (viewModel.openGalleryImage(group, index)) enterFullscreen()
+                                        },
+                                        onBack = {
+                                            if (viewModel.gallery.pickerMode) viewModel.cancelGalleryPicker() else viewModel.closeGallery()
+                                        },
+                                        pickerMode = viewModel.gallery.pickerMode,
+                                        selectedFiles = viewModel.gallery.selectedFiles,
+                                        onToggleSelect = { file -> viewModel.toggleGallerySelection(file) },
+                                        onConfirmSelection = { viewModel.confirmGalleryPicker() },
+                                    )
+
+                                    Screen.PlaylistList -> PlaylistsScreen(
+                                        playlists = viewModel.playlistEditor.all,
+                                        onBack = { viewModel.closePlaylistList() },
+                                        onRefresh = { viewModel.refreshPlaylistList() },
+                                        onOpenPlaylist = { playlist -> viewModel.openPlaylistForEdit(playlist) },
+                                        onPlayPlaylist = { playlist ->
+                                            val started = viewModel.playPlaylist(playlist)
                                             if (started) enterFullscreen()
                                             started
                                         },
-                                        onBack = { viewModel.closePlaylistEdit() },
-                                        onEditName = viewModel::modifyPlaylistName,
-                                        canRenamePlaylist = viewModel::canRenamePlaylist,
-                                        onModifyDefaultDuration = viewModel::modifyDefaultDuration,
-                                        onModifyIsAutomated = viewModel::modifyIsAutomated,
-                                        onModifySubtitle = viewModel::modifySubtitle,
-                                        onModifyTitleZPercent = viewModel::modifyTitleZPercent,
-                                        onModifySubtitleZPercent = viewModel::modifySubtitleZPercent,
-                                        onModifyTitleStyle = viewModel::modifyTitleStyle,
-                                        onModifySubtitleStyle = viewModel::modifySubtitleStyle,
-                                        onReorderPhotos = viewModel::applyPhotosReorder,
-                                        onDelete = viewModel::deletePlaylist,
-                                        onOpenPlaylistItem = { index -> viewModel.openPlaylistItem(index) },
+                                        onCreatePlaylist = { name ->
+                                            viewModel.startCreatePlaylist(name)
+                                        },
+                                        canCreatePlaylist = viewModel::canCreatePlaylist,
                                     )
-                                }
 
-                                Screen.PlaylistItem -> {
-                                    val playlist = viewModel.playlistEditor.editing
-                                    val index = viewModel.playlistEditor.editingItemIndex
-                                    val photo = if (playlist != null && index != null) playlist.photos.getOrNull(index) else null
-                                    photo?.let {
-                                        PlaylistItemScreen(
-                                            photo = it,
-                                            isPlaylistManual = playlist != null && !playlist.isAutomated,
-                                            onBack = { viewModel.closePlaylistItem() },
-                                            onModifyComment = viewModel::modifyItemComment,
-                                            onModifyCommentZPercent = viewModel::modifyItemCommentZPercent,
-                                            onModifyDuration = viewModel::modifyItemDuration,
-                                            onModifyHalfWidth = viewModel::modifyItemHalfWidth,
-                                            onModifyMuted = viewModel::modifyItemMuted,
-                                            onDelete = viewModel::deletePlaylistItem,
+                                    Screen.PlaylistEdit -> viewModel.playlistEditor.editing?.let { playlist ->
+                                        val addPhotosDirectoryDialogTitle = stringResource(Res.string.playlist_add_photos_directory_dialog_title)
+                                        val addMusicDialogTitle = stringResource(Res.string.playlist_add_music_dialog_title)
+                                        PlaylistScreen(
+                                            playlist = playlist,
+                                            onAddMusic = {
+                                                val files = chooseMusicFiles(window = window, title = addMusicDialogTitle, extensions = arrayOf("mp3", "m4a", "wav", "ogg", "flac"))
+                                                if (files.isNotEmpty()) viewModel.addSoundtrackToEditingPlaylist(files)
+                                            },
+                                            onRemoveSoundtrackItem = viewModel::removeSoundtrackItem,
+                                            onAddPhotos = {
+                                                chooseDirectory(window = window, title = addPhotosDirectoryDialogTitle)?.let { folder ->
+                                                    viewModel.openGalleryForPicking(folder)
+                                                }
+                                            },
+                                            onPlay = {
+                                                val started = viewModel.playEditingPlaylist()
+                                                if (started) enterFullscreen()
+                                                started
+                                            },
+                                            onBack = { viewModel.closePlaylistEdit() },
+                                            onEditName = viewModel::modifyPlaylistName,
+                                            canRenamePlaylist = viewModel::canRenamePlaylist,
+                                            onModifyDefaultDuration = viewModel::modifyDefaultDuration,
+                                            onModifyIsAutomated = viewModel::modifyIsAutomated,
+                                            onModifyScrollSpeedLimitPercent = viewModel::modifyScrollSpeedLimitPercent,
+                                            onModifySubtitle = viewModel::modifySubtitle,
+                                            onModifyTitleZPercent = viewModel::modifyTitleZPercent,
+                                            onModifySubtitleZPercent = viewModel::modifySubtitleZPercent,
+                                            onModifyTitleStyle = viewModel::modifyTitleStyle,
+                                            onModifySubtitleStyle = viewModel::modifySubtitleStyle,
+                                            onReorderPhotos = viewModel::applyPhotosReorder,
+                                            onDelete = viewModel::deletePlaylist,
+                                            onOpenPlaylistItem = { index -> viewModel.openPlaylistItem(index) },
+                                        )
+                                    }
+
+                                    Screen.PlaylistItem -> {
+                                        val playlist = viewModel.playlistEditor.editing
+                                        val index = viewModel.playlistEditor.editingItemIndex
+                                        val photo = if (playlist != null && index != null) playlist.photos.getOrNull(index) else null
+                                        photo?.let {
+                                            PlaylistItemScreen(
+                                                photo = it,
+                                                isPlaylistManual = playlist != null && !playlist.isAutomated,
+                                                onBack = { viewModel.closePlaylistItem() },
+                                                onModifyComment = viewModel::modifyItemComment,
+                                                onModifyCommentZPercent = viewModel::modifyItemCommentZPercent,
+                                                onModifyDuration = viewModel::modifyItemDuration,
+                                                onModifyHalfWidth = viewModel::modifyItemHalfWidth,
+                                                onModifyMuted = viewModel::modifyItemMuted,
+                                                onModifyFullscreenScroll = viewModel::modifyItemFullscreenScroll,
+                                                onDelete = viewModel::deletePlaylistItem,
+                                            )
+                                        }
+                                    }
+
+                                    Screen.ImageView -> {
+                                    viewModel.playingPlaylist?.let {
+                                        PlaylistSoundtrack(
+                                            playlist = it,
+                                            // keeps playing over the end slide, fading out during its animation
+                                            playing = viewModel.playlistSlideKind == PlaylistSlideKind.PHOTO ||
+                                                viewModel.playlistSlideKind == PlaylistSlideKind.END,
+                                            fadingOut = viewModel.playlistSlideKind == PlaylistSlideKind.END,
+                                            mutedForVideo = viewModel.currentPlaylistItem?.let { item -> item.isVideo && !item.isMuted } == true,
+                                            audioOutputDeviceId = viewModel.audioOutputDeviceId,
+                                        )
+                                    }
+                                    when (viewModel.playlistSlideKind) {
+                                        PlaylistSlideKind.TITLE -> viewModel.playingPlaylist?.let {
+                                            if (viewModel.isAutomatedPlaylist) {
+                                                LaunchedEffect(viewModel.currentImageIndex) {
+                                                    delay(viewModel.slideshowIntervalMs.milliseconds)
+                                                    viewModel.advanceSlideshow()
+                                                }
+                                            }
+                                            PlaylistTitleScreen(it, shrinkControls = viewModel.shrinkControls)
+                                        }
+                                        PlaylistSlideKind.END -> PlaylistEndScreen(shrinkControls = viewModel.shrinkControls)
+                                        PlaylistSlideKind.PHOTO, null -> if (viewModel.currentPlaylistItem?.isVideo == true) {
+                                            // A video slide auto-advances on natural playback end
+                                            // (or loops forever in a manual playlist) instead of the
+                                            // fixed-duration timer below - see PlaylistVideoSlide's doc.
+                                            viewModel.currentImage?.let { file ->
+                                                PlaylistVideoSlide(
+                                                    file = file,
+                                                    loop = !viewModel.isAutomatedPlaylist,
+                                                    halveLeftRightImages = viewModel.halveLeftRightImages,
+                                                    isHalfWidth = viewModel.currentPlaylistItem?.isHalfWidth == true,
+                                                    isMuted = viewModel.currentPlaylistItem?.isMuted == true,
+                                                    shrinkControls = viewModel.shrinkControls,
+                                                    audioOutputDeviceId = viewModel.audioOutputDeviceId,
+                                                    onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
+                                                    onEnded = viewModel::advanceSlideshow,
+                                                    onExitFullscreen = exitFullscreen,
+                                                    onNextImage = viewModel::showNextImage,
+                                                    onPreviousImage = viewModel::showPreviousImage,
+                                                )
+                                            }
+                                        } else {
+                                            // "force fullscreen by scrolling" photo: the slide lasts its actual scrolling
+                                            // duration, only known once its images are loaded (possibly extended by the
+                                            // playlist's scroll speed limit) - see FullscreenScrollStereoImage.
+                                            val fullscreenScrollDurationMs = viewModel.playingPlaylist?.fullscreenScrollDurationMs(viewModel.currentPlaylistItem)
+                                            var actualScrollDurationMs by remember(viewModel.currentImageIndex, viewModel.imageFiles) { mutableStateOf<Long?>(null) }
+                                            if (viewModel.isAutomatedPlaylist) {
+                                                LaunchedEffect(viewModel.currentImageIndex, viewModel.imageFiles, actualScrollDurationMs) {
+                                                    val slideMs = if (fullscreenScrollDurationMs != null) actualScrollDurationMs ?: return@LaunchedEffect
+                                                        else viewModel.slideshowIntervalMs
+                                                    delay(slideMs.milliseconds)
+                                                    viewModel.advanceSlideshow()
+                                                }
+                                            }
+                                            viewModel.currentImage?.let { file ->
+                                                ImageScreen(
+                                                    file,
+                                                    overrideBitmap = viewModel.photoTools.alignedPreview,
+                                                    showInfoPanel = showImageInfoPanel,
+                                                    hasAlignedPreview = viewModel.photoTools.alignedPreview != null,
+                                                    isAligning = viewModel.isAligning,
+                                                    alignToast = viewModel.alignToast,
+                                                    saveToast = viewModel.saveToast,
+                                                    shareToast = viewModel.share.toast,
+                                                    keepBestOfEachOnly = viewModel.keepBestOfEachOnly,
+                                                    favoritesOnly = viewModel.favoritesOnly,
+                                                    excludeStereoIssues = viewModel.excludeStereoIssues,
+                                                    showPhotoFilters = viewModel.playingPlaylist == null,
+                                                    checkLikelySideBySide = viewModel.playingPlaylist == null,
+                                                    halveLeftRightImages = viewModel.halveLeftRightImages,
+                                                    fullscreenScrollPhoto = viewModel.currentPlaylistItem.takeIf { fullscreenScrollDurationMs != null },
+                                                    fullscreenScrollDurationMs = fullscreenScrollDurationMs,
+                                                    scrollSpeedLimitPercent = viewModel.playingPlaylist?.scrollSpeedLimitPercent ?: 0f,
+                                                    onFullscreenScrollDurationMs = { actualScrollDurationMs = it },
+                                                    shrinkControls = viewModel.shrinkControls,
+                                                    manualAlignMode = viewModel.photoTools.manualAlignMode,
+                                                    manualAlignOffsetX = viewModel.photoTools.manualAlignOffsetX,
+                                                    manualAlignOffsetY = viewModel.photoTools.manualAlignOffsetY,
+                                                    manualAlignStepPercent = viewModel.manualAlignStepPercent,
+                                                    cropMode = viewModel.photoTools.cropMode,
+                                                    cropRect = viewModel.photoTools.cropRect,
+                                                    spotIssuesMode = viewModel.photoTools.spotIssuesMode,
+                                                    spotIssueRects = viewModel.photoTools.spotIssueRects,
+                                                    clickAlignMode = viewModel.photoTools.clickAlignMode,
+                                                    clickAlignLeftPoint = viewModel.photoTools.clickAlignLeftPoint,
+                                                    clickAlignRightPoint = viewModel.photoTools.clickAlignRightPoint,
+                                                    clickAlignPreviewActive = viewModel.photoTools.clickAlignPreviewActive,
+                                                    clickAlignPreview = viewModel.photoTools.clickAlignPreview,
+                                                    pendingNavigation = viewModel.pendingNavigation,
+                                                    onConfirmSaveAlignedAndNavigate = {
+                                                        coroutineScope.launch { viewModel.confirmSaveAlignedAndNavigate() }
+                                                    },
+                                                    onDiscardAlignedPreviewAndNavigate = viewModel::discardAlignedPreviewAndNavigate,
+                                                    onCancelPendingNavigation = viewModel::cancelPendingNavigation,
+                                                    onKeepBestOfEachOnlyChosen = viewModel::onKeepBestOfEachOnlyChosen,
+                                                    onFavoritesOnlyChosen = viewModel::onFavoritesOnlyChosen,
+                                                    onExcludeStereoIssuesChosen = viewModel::onExcludeStereoIssuesChosen,
+                                                    onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
+                                                    onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
+                                                    onManualAlignStepPercentChosen = viewModel::onManualAlignStepPercentChosen,
+                                                    onExitFullscreen = exitFullscreen,
+                                                    onNextImage = viewModel::showNextImage,
+                                                    onPreviousImage = viewModel::showPreviousImage,
+                                                    onToggleInfoPanel = { showImageInfoPanel = !showImageInfoPanel },
+                                                    lastShareType = viewModel.share.lastType,
+                                                    lastShareDestination = viewModel.share.lastDestination,
+                                                    onShareChosen = { type, destination ->
+                                                        coroutineScope.launch { viewModel.performShare(type, destination) }
+                                                    },
+                                                    onAutoAlign = {
+                                                        coroutineScope.launch {
+                                                            viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY)
+                                                        }
+                                                    },
+                                                    onCorrectZoom = {
+                                                        coroutineScope.launch {
+                                                            viewModel.performAutoAlign(file, AlignKind.AFFINE)
+                                                        }
+                                                    },
+                                                    onSaveAligned = {
+                                                        coroutineScope.launch { viewModel.performSaveAligned() }
+                                                    },
+                                                    onCancelAligned = viewModel::cancelAligned,
+                                                    onStartManualAlign = viewModel::startManualAlign,
+                                                    onCancelManualAlign = viewModel::cancelManualAlign,
+                                                    onSaveManualAlign = {
+                                                        coroutineScope.launch { viewModel.performSaveManualAlign() }
+                                                    },
+                                                    onStartCrop = viewModel::startCrop,
+                                                    onCropRectFinalized = viewModel::finalizeCropRect,
+                                                    onCancelCrop = viewModel::cancelCrop,
+                                                    onSaveCrop = {
+                                                        coroutineScope.launch { viewModel.performSaveCrop() }
+                                                    },
+                                                    onStartSpotIssues = viewModel::startSpotIssues,
+                                                    onSpotIssueRectAdded = viewModel::addSpotIssueRect,
+                                                    onCancelSpotIssues = viewModel::cancelSpotIssues,
+                                                    onSaveSpotIssues = {
+                                                        coroutineScope.launch { viewModel.performSaveSpotIssues() }
+                                                    },
+                                                    onStartClickAlign = viewModel::startClickAlign,
+                                                    onClickAlignPointSet = viewModel::setClickAlignPoint,
+                                                    onCancelClickAlign = viewModel::cancelClickAlign,
+                                                    onSaveClickAlign = {
+                                                        coroutineScope.launch { viewModel.performSaveClickAlign() }
+                                                    },
+                                                    onRequestClickAlignPreview = {
+                                                        coroutineScope.launch { viewModel.refreshClickAlignPreview() }
+                                                    },
+                                                    onDeleteCurrentImage = {
+                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage() }
+                                                    },
+                                                    onDeleteKeepingLeft = {
+                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) }
+                                                    },
+                                                    onDeleteKeepingRight = {
+                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) }
+                                                    },
+                                                    onImageLoaded = finishEnteringFullscreen,
+                                                    onRequestKeyboardFocus = { focusRequester.requestFocus() },
+                                                    onDialogShownChanged = { imageDialogShown = it },
+                                                )
+                                            }
+                                        }
+                                    }
+                                    }
+
+                                    Screen.VideoView -> viewModel.currentImage?.let { file ->
+                                        VideoScreen(
+                                            file,
+                                            halveLeftRightImages = viewModel.halveLeftRightImages,
+                                            shrinkControls = viewModel.shrinkControls,
+                                            audioOutputDeviceId = viewModel.audioOutputDeviceId,
+                                            onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
+                                            onExitFullscreen = exitFullscreen,
                                         )
                                     }
                                 }
 
-                                Screen.ImageView -> {
-                                viewModel.playingPlaylist?.let {
-                                    PlaylistSoundtrack(
-                                        playlist = it,
-                                        // keeps playing over the end slide, fading out during its animation
-                                        playing = viewModel.playlistSlideKind == PlaylistSlideKind.PHOTO ||
-                                            viewModel.playlistSlideKind == PlaylistSlideKind.END,
-                                        fadingOut = viewModel.playlistSlideKind == PlaylistSlideKind.END,
-                                        mutedForVideo = viewModel.currentPlaylistItem?.let { item -> item.isVideo && !item.isMuted } == true,
-                                        audioOutputDeviceId = viewModel.audioOutputDeviceId,
-                                    )
-                                }
-                                when (viewModel.playlistSlideKind) {
-                                    PlaylistSlideKind.TITLE -> viewModel.playingPlaylist?.let {
-                                        if (viewModel.isAutomatedPlaylist) {
-                                            LaunchedEffect(viewModel.currentImageIndex) {
-                                                delay(viewModel.slideshowIntervalMs.milliseconds)
-                                                viewModel.advanceSlideshow()
-                                            }
-                                        }
-                                        PlaylistTitleScreen(it, shrinkControls = viewModel.shrinkControls)
-                                    }
-                                    PlaylistSlideKind.END -> PlaylistEndScreen(shrinkControls = viewModel.shrinkControls)
-                                    PlaylistSlideKind.PHOTO, null -> if (viewModel.currentPlaylistItem?.isVideo == true) {
-                                        // A video slide auto-advances on natural playback end
-                                        // (or loops forever in a manual playlist) instead of the
-                                        // fixed-duration timer below - see PlaylistVideoSlide's doc.
-                                        viewModel.currentImage?.let { file ->
-                                            PlaylistVideoSlide(
-                                                file = file,
-                                                loop = !viewModel.isAutomatedPlaylist,
-                                                halveLeftRightImages = viewModel.halveLeftRightImages,
-                                                isHalfWidth = viewModel.currentPlaylistItem?.isHalfWidth == true,
-                                                isMuted = viewModel.currentPlaylistItem?.isMuted == true,
-                                                shrinkControls = viewModel.shrinkControls,
-                                                audioOutputDeviceId = viewModel.audioOutputDeviceId,
-                                                onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
-                                                onEnded = viewModel::advanceSlideshow,
-                                                onExitFullscreen = exitFullscreen,
-                                                onNextImage = viewModel::showNextImage,
-                                                onPreviousImage = viewModel::showPreviousImage,
-                                            )
-                                        }
-                                    } else {
-                                        if (viewModel.isAutomatedPlaylist) {
-                                            LaunchedEffect(viewModel.currentImageIndex, viewModel.imageFiles) {
-                                                delay(viewModel.slideshowIntervalMs.milliseconds)
-                                                viewModel.advanceSlideshow()
-                                            }
-                                        }
-                                        viewModel.currentImage?.let { file ->
-                                            ImageScreen(
-                                                file,
-                                                overrideBitmap = viewModel.photoTools.alignedPreview,
-                                                showInfoPanel = showImageInfoPanel,
-                                                hasAlignedPreview = viewModel.photoTools.alignedPreview != null,
-                                                isAligning = viewModel.isAligning,
-                                                alignToast = viewModel.alignToast,
-                                                saveToast = viewModel.saveToast,
-                                                shareToast = viewModel.share.toast,
-                                                keepBestOfEachOnly = viewModel.keepBestOfEachOnly,
-                                                favoritesOnly = viewModel.favoritesOnly,
-                                                excludeStereoIssues = viewModel.excludeStereoIssues,
-                                                showPhotoFilters = viewModel.playingPlaylist == null,
-                                                checkLikelySideBySide = viewModel.playingPlaylist == null,
-                                                halveLeftRightImages = viewModel.halveLeftRightImages,
-                                                shrinkControls = viewModel.shrinkControls,
-                                                manualAlignMode = viewModel.photoTools.manualAlignMode,
-                                                manualAlignOffsetX = viewModel.photoTools.manualAlignOffsetX,
-                                                manualAlignOffsetY = viewModel.photoTools.manualAlignOffsetY,
-                                                manualAlignStepPercent = viewModel.manualAlignStepPercent,
-                                                cropMode = viewModel.photoTools.cropMode,
-                                                cropRect = viewModel.photoTools.cropRect,
-                                                spotIssuesMode = viewModel.photoTools.spotIssuesMode,
-                                                spotIssueRects = viewModel.photoTools.spotIssueRects,
-                                                clickAlignMode = viewModel.photoTools.clickAlignMode,
-                                                clickAlignLeftPoint = viewModel.photoTools.clickAlignLeftPoint,
-                                                clickAlignRightPoint = viewModel.photoTools.clickAlignRightPoint,
-                                                clickAlignPreviewActive = viewModel.photoTools.clickAlignPreviewActive,
-                                                clickAlignPreview = viewModel.photoTools.clickAlignPreview,
-                                                pendingNavigation = viewModel.pendingNavigation,
-                                                onConfirmSaveAlignedAndNavigate = {
-                                                    coroutineScope.launch { viewModel.confirmSaveAlignedAndNavigate() }
-                                                },
-                                                onDiscardAlignedPreviewAndNavigate = viewModel::discardAlignedPreviewAndNavigate,
-                                                onCancelPendingNavigation = viewModel::cancelPendingNavigation,
-                                                onKeepBestOfEachOnlyChosen = viewModel::onKeepBestOfEachOnlyChosen,
-                                                onFavoritesOnlyChosen = viewModel::onFavoritesOnlyChosen,
-                                                onExcludeStereoIssuesChosen = viewModel::onExcludeStereoIssuesChosen,
-                                                onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
-                                                onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
-                                                onManualAlignStepPercentChosen = viewModel::onManualAlignStepPercentChosen,
-                                                onExitFullscreen = exitFullscreen,
-                                                onNextImage = viewModel::showNextImage,
-                                                onPreviousImage = viewModel::showPreviousImage,
-                                                onToggleInfoPanel = { showImageInfoPanel = !showImageInfoPanel },
-                                                lastShareType = viewModel.share.lastType,
-                                                lastShareDestination = viewModel.share.lastDestination,
-                                                onShareChosen = { type, destination ->
-                                                    coroutineScope.launch { viewModel.performShare(type, destination) }
-                                                },
-                                                onAutoAlign = {
-                                                    coroutineScope.launch {
-                                                        viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY)
-                                                    }
-                                                },
-                                                onCorrectZoom = {
-                                                    coroutineScope.launch {
-                                                        viewModel.performAutoAlign(file, AlignKind.AFFINE)
-                                                    }
-                                                },
-                                                onSaveAligned = {
-                                                    coroutineScope.launch { viewModel.performSaveAligned() }
-                                                },
-                                                onCancelAligned = viewModel::cancelAligned,
-                                                onStartManualAlign = viewModel::startManualAlign,
-                                                onCancelManualAlign = viewModel::cancelManualAlign,
-                                                onSaveManualAlign = {
-                                                    coroutineScope.launch { viewModel.performSaveManualAlign() }
-                                                },
-                                                onStartCrop = viewModel::startCrop,
-                                                onCropRectFinalized = viewModel::finalizeCropRect,
-                                                onCancelCrop = viewModel::cancelCrop,
-                                                onSaveCrop = {
-                                                    coroutineScope.launch { viewModel.performSaveCrop() }
-                                                },
-                                                onStartSpotIssues = viewModel::startSpotIssues,
-                                                onSpotIssueRectAdded = viewModel::addSpotIssueRect,
-                                                onCancelSpotIssues = viewModel::cancelSpotIssues,
-                                                onSaveSpotIssues = {
-                                                    coroutineScope.launch { viewModel.performSaveSpotIssues() }
-                                                },
-                                                onStartClickAlign = viewModel::startClickAlign,
-                                                onClickAlignPointSet = viewModel::setClickAlignPoint,
-                                                onCancelClickAlign = viewModel::cancelClickAlign,
-                                                onSaveClickAlign = {
-                                                    coroutineScope.launch { viewModel.performSaveClickAlign() }
-                                                },
-                                                onRequestClickAlignPreview = {
-                                                    coroutineScope.launch { viewModel.refreshClickAlignPreview() }
-                                                },
-                                                onDeleteCurrentImage = {
-                                                    coroutineScope.launch { viewModel.performDeleteCurrentImage() }
-                                                },
-                                                onDeleteKeepingLeft = {
-                                                    coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) }
-                                                },
-                                                onDeleteKeepingRight = {
-                                                    coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) }
-                                                },
-                                                onImageLoaded = finishEnteringFullscreen,
-                                                onRequestKeyboardFocus = { focusRequester.requestFocus() },
-                                                onDialogShownChanged = { imageDialogShown = it },
-                                            )
-                                        }
-                                    }
-                                }
+                                if (isEnteringFullscreen && inViewer) {
+                                    FullscreenLoadingOverlay()
                                 }
 
-                                Screen.VideoView -> viewModel.currentImage?.let { file ->
-                                    VideoScreen(
-                                        file,
-                                        halveLeftRightImages = viewModel.halveLeftRightImages,
-                                        shrinkControls = viewModel.shrinkControls,
-                                        audioOutputDeviceId = viewModel.audioOutputDeviceId,
-                                        onAudioOutputDeviceChosen = viewModel::onAudioOutputDeviceChosen,
-                                        onExitFullscreen = exitFullscreen,
-                                    )
+                                if (viewModel.showVlcMissingSheet) {
+                                    VlcMissingSheet(onDismiss = viewModel::dismissVlcMissingSheet)
                                 }
-                            }
 
-                            if (isEnteringFullscreen && inViewer) {
-                                FullscreenLoadingOverlay()
-                            }
+                                whatsNewRelease?.let { release ->
+                                    WhatsNewDialog(release, onDismiss = {
+                                        whatsNewRelease = null
+                                        Analytics.logEvent("whats_new_dismissed")
+                                    })
+                                }
 
-                            if (viewModel.showVlcMissingSheet) {
-                                VlcMissingSheet(onDismiss = viewModel::dismissVlcMissingSheet)
-                            }
+                                if (!analyticsConsentAnswered) {
+                                    AnalyticsConsentDialog(onAnswered = { granted ->
+                                        Analytics.setConsent(granted)
+                                        analyticsConsentAnswered = true
+                                        if (granted) Analytics.logEvent("app_launch")
+                                    })
+                                }
 
-                            whatsNewRelease?.let { release ->
-                                WhatsNewDialog(release, onDismiss = {
-                                    whatsNewRelease = null
-                                    Analytics.logEvent("whats_new_dismissed")
-                                })
-                            }
-
-                            if (!analyticsConsentAnswered) {
-                                AnalyticsConsentDialog(onAnswered = { granted ->
-                                    Analytics.setConsent(granted)
-                                    analyticsConsentAnswered = true
-                                    if (granted) Analytics.logEvent("app_launch")
-                                })
+                                if (showCrashRecoveredDialog) {
+                                    CrashRecoveredDialog(onDismiss = { showCrashRecoveredDialog = false })
+                                }
                             }
                         }
                     }

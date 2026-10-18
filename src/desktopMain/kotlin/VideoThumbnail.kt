@@ -61,7 +61,7 @@ private object VideoThumbnailCache {
     // and running more than one concurrently (e.g. several video items visible at once in a
     // playlist) causes libVLC vout/decoder resource contention - "Failed to set on top" and h264
     // "get_buffer() failed"/"decode_slice_header error" - so extractions are serialized instead.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1) + CrashReporting.coroutineHandler)
 
     sealed class Result {
         data class Loaded(val bitmap: ImageBitmap) : Result()

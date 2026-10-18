@@ -1,6 +1,7 @@
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
@@ -275,6 +276,14 @@ class PlaylistEditorState {
         return true
     }
 
+    /** Updates the max scrolling speed of "force fullscreen by scrolling" photos, in % of the screen per second (0..100, 0 = no limit, like CameraSync3D). */
+    fun modifyScrollSpeedLimitPercent(newValue: Float): Boolean {
+        val playlist = editing ?: return false
+        if (newValue !in 0f..100f) return false
+        save(playlist.copy(scrollSpeedLimitPercent = newValue))
+        return true
+    }
+
     fun modifySubtitle(newValue: String): Boolean {
         save((editing ?: return false).copy(subtitle = newValue))
         return true
@@ -336,6 +345,10 @@ class PlaylistEditorState {
 
     fun modifyItemMuted(newValue: Boolean) {
         modifyEditingItem { it.copy(isMuted = newValue) }
+    }
+
+    fun modifyItemFullscreenScroll(newValue: FullscreenScroll) {
+        modifyEditingItem { it.copy(fullscreenScroll = newValue) }
     }
 
     /** Deletes the photo open in the PlaylistItem screen: removes it from the playlist and from disk. */

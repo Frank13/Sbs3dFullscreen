@@ -12,6 +12,11 @@ package fr.camera3d.camera.feature_playlists.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,12 +41,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import fr.camera3d.camera.common.ui_components.EditParameterComposable
 import fr.camera3d.camera.common.ui_components.SwitchParameterComposable
 import fr.camera3d.camera.common.ui_components.snackbar
+import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import kotlinx.coroutines.CoroutineScope
 
 /** Displays the playlist item's photo, full width, capped at 400dp tall. [onClick] is a no-op by default (used on Android to open the anaglyph editor; desktop has no equivalent). */
@@ -162,6 +170,48 @@ fun ComposableItemMuted(isMuted: Boolean, onModifyMuted: (Boolean) -> Unit, stri
         documentation = strings.mutedDocumentation,
         onCheckedChange = onModifyMuted,
     )
+}
+
+/**
+ * Displays the "force fullscreen by scrolling" switch and, when on, its direction (up/left or down/right).
+ * Photo items only. Only enabled in an automated playlist ([isAutomated]): the scrolling speed is derived
+ * from the slide duration, which manual mode ignores.
+ */
+@Composable
+fun ComposableItemFullscreenScroll(
+    fullscreenScroll: FullscreenScroll,
+    isAutomated: Boolean,
+    onModifyFullscreenScroll: (FullscreenScroll) -> Unit,
+    strings: PlaylistItemScreenStrings,
+) {
+    SwitchParameterComposable(
+        parameterName = strings.fullscreenScroll,
+        checked = fullscreenScroll != FullscreenScroll.NONE,
+        enabled = isAutomated,
+        documentation = if (isAutomated) strings.fullscreenScrollDocumentation else strings.fullscreenScrollManualModeWarning,
+        onCheckedChange = { checked -> onModifyFullscreenScroll(if (checked) FullscreenScroll.UP_LEFT else FullscreenScroll.NONE) },
+    )
+    if (fullscreenScroll != FullscreenScroll.NONE) {
+        Column(Modifier.selectableGroup().padding(start = 16.dp)) {
+            listOf(
+                FullscreenScroll.UP_LEFT to strings.fullscreenScrollUpLeft,
+                FullscreenScroll.DOWN_RIGHT to strings.fullscreenScrollDownRight,
+            ).forEach { (direction, label) ->
+                Row(
+                    Modifier.fillMaxWidth().selectable(
+                        selected = fullscreenScroll == direction,
+                        enabled = isAutomated,
+                        role = Role.RadioButton,
+                        onClick = { onModifyFullscreenScroll(direction) },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = fullscreenScroll == direction, enabled = isAutomated, onClick = null)
+                    Text(label, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
+    }
 }
 
 /** The playlist-item screen's 3-dot menu: delete-photo option (no confirmation dialog, matching Android). */

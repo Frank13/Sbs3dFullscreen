@@ -1,6 +1,10 @@
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -168,13 +172,23 @@ fun AboutScreen(onBack: () -> Unit) {
             onDismissRequest = { showOpenSourceDialog = false },
             title = { Text(stringResource(Res.string.about_open_source_dialog_title)) },
             text = {
-                LazyColumn {
-                    items(openSourceLibraries) { library ->
-                        Column {
-                            Text(library.name, style = MaterialTheme.typography.bodyLarge)
-                            Text(library.license, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.height(8.dp))
+                val listState = rememberLazyListState()
+                Box {
+                    LazyColumn(state = listState) {
+                        items(openSourceLibraries) { library ->
+                            Column {
+                                Text(library.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(library.license, style = MaterialTheme.typography.bodySmall)
+                                Spacer(Modifier.height(8.dp))
+                            }
                         }
+                    }
+                    // Offset by AlertDialog's 24dp content padding, like WelcomeScreen's settings dialog.
+                    if (listState.canScrollForward || listState.canScrollBackward) {
+                        WindowsVerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(listState),
+                            modifier = Modifier.align(Alignment.CenterEnd).offset(x = 24.dp),
+                        )
                     }
                 }
             },

@@ -58,7 +58,7 @@ object Analytics {
     // that happened in this object's initializer, it crashed the app at startup.
     private const val TimeoutMillis = 5_000
     private val mapper = jacksonObjectMapper()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashReporting.coroutineHandler)
 
     // One id per app run, not persisted - lets GA4 group the events of a single launch into one
     // session even though Measurement Protocol hits (unlike gtag.js) don't get one automatically.
@@ -74,6 +74,7 @@ object Analytics {
     fun setConsent(granted: Boolean) {
         consentGranted = granted
         AnalyticsConsentPreference.save(granted)
+        CrashReporting.onConsentChanged(granted)
     }
 
     fun logEvent(name: String, params: Map<String, Any?> = emptyMap()) {

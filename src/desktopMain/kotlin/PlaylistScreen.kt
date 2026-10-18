@@ -1,5 +1,6 @@
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,8 @@ import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditDefaultDuration
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditDefaultDurationDialog
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditName
+import fr.camera3d.camera.feature_playlists.ui.ComposableEditScrollSpeedLimit
+import fr.camera3d.camera.feature_playlists.ui.ComposableEditScrollSpeedLimitDialog
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditSubtitle
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditTextStyleIcon
 import fr.camera3d.camera.feature_playlists.ui.ComposablePlaylistItem
@@ -53,15 +56,16 @@ import fr.camera3d.camera.feature_playlists.ui.ComposablePlaylistMenu
 import fr.camera3d.camera.feature_playlists.ui.PlaylistScreenStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleEditorStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleTarget
+import fr.camera3d.camera.feature_playlists.ui.formatScrollSpeedLimitPercent
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-// Number of header items (name+style row/subtitle+style row/soundtrack/automated-switch/duration) placed
+// Number of header items (name+style row/subtitle+style row/soundtrack/automated-switch/duration/scroll speed limit) placed
 // before the photo items in the LazyColumn - kept in sync with PlaylistFragment.kt's Android
 // counterpart so the drag-to-reorder index math (from/to - PLAYLIST_HEADER_ITEM_COUNT) matches.
-private const val PLAYLIST_HEADER_ITEM_COUNT = 5
+private const val PLAYLIST_HEADER_ITEM_COUNT = 6
 
 /**
  * Playlist editor screen: same fields/behavior as CameraSync3D's PlaylistFragment, built from the
@@ -82,6 +86,7 @@ fun PlaylistScreen(
     canRenamePlaylist: (String) -> Boolean,
     onModifyDefaultDuration: (Long) -> Boolean,
     onModifyIsAutomated: (Boolean) -> Boolean,
+    onModifyScrollSpeedLimitPercent: (Float) -> Boolean,
     onModifySubtitle: (String) -> Boolean,
     onModifyTitleZPercent: (Float) -> Boolean,
     onModifySubtitleZPercent: (Float) -> Boolean,
@@ -117,6 +122,10 @@ fun PlaylistScreen(
         defaultDuration = stringResource(Res.string.playlist_default_duration_label),
         modifySlideshowDefaultDurationBetweenImages = stringResource(Res.string.playlist_modify_default_duration_dialog_title),
         defaultDurationShouldBe0And60000Ms = stringResource(Res.string.playlist_default_duration_range_error),
+        scrollSpeedLimit = stringResource(Res.string.playlist_scroll_speed_limit),
+        modifyScrollSpeedLimit = stringResource(Res.string.playlist_modify_scroll_speed_limit),
+        scrollSpeedLimitDocumentation = stringResource(Res.string.playlist_scroll_speed_limit_documentation),
+        scrollSpeedLimitShouldBe0And100 = stringResource(Res.string.playlist_scroll_speed_limit_range_error),
         deletePlaylistOption = stringResource(Res.string.playlist_delete_option),
         deletePlaylistConfirmTitle = stringResource(Res.string.playlist_delete_confirm_title),
         deletePlaylistConfirmOk = stringResource(Res.string.playlist_delete_confirm_ok),
@@ -154,6 +163,8 @@ fun PlaylistScreen(
     // a dialog owned by the row itself could be silently dismissed if the row isn't recomposed.
     var showDurationDialog by rememberSaveable { mutableStateOf(false) }
     var durationTextFieldValue by rememberSaveable { mutableStateOf("") }
+    var showScrollSpeedLimitDialog by rememberSaveable { mutableStateOf(false) }
+    var scrollSpeedLimitTextFieldValue by rememberSaveable { mutableStateOf("") }
 
     // Local working list for live drag visual feedback; kept in sync with playlist.photos when no
     // drag is in progress (same pattern as Android's ComposablePlaylistFragment).
@@ -243,7 +254,7 @@ fun PlaylistScreen(
                 LazyColumn(
                     state = lazyListState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    modifier = Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp + windowsScrollbarStyle.thickness, top = 8.dp, bottom = 8.dp),
                 ) {
                     item {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -317,6 +328,19 @@ fun PlaylistScreen(
                             )
                         }
                     }
+                    item {
+                        Box(Modifier.padding(start = 16.dp)) {
+                            ComposableEditScrollSpeedLimit(
+                                speedLimitPercent = playlist.scrollSpeedLimitPercent,
+                                enabled = playlist.isAutomated,
+                                strings = strings,
+                                onClick = {
+                                    scrollSpeedLimitTextFieldValue = formatScrollSpeedLimitPercent(playlist.scrollSpeedLimitPercent).removeSuffix("%")
+                                    showScrollSpeedLimitDialog = true
+                                },
+                            )
+                        }
+                    }
                     itemsIndexed(workingPhotos, key = ::keyFor) { index, photo ->
                         ReorderableItem(reorderState, key = keyFor(index, photo)) { dragging ->
                             val elevation = if (dragging) 8.dp else 4.dp
@@ -356,6 +380,13 @@ fun PlaylistScreen(
                         }
                     }
                 }
+                // Only shown once the list overflows, so short playlists don't get an empty track.
+                if (lazyListState.canScrollForward || lazyListState.canScrollBackward) {
+                    WindowsVerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(lazyListState),
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                }
                 if (showDurationDialog) {
                     ComposableEditDefaultDurationDialog(
                         currentDurationS = playlist.defaultDurationS,
@@ -363,6 +394,18 @@ fun PlaylistScreen(
                         onDurationTextFieldValueChange = { durationTextFieldValue = it },
                         onDismissRequestCb = { showDurationDialog = false },
                         onSave = onModifyDefaultDuration,
+                        snackbarHostState = snackbarHostState,
+                        scope = scope,
+                        strings = strings,
+                    )
+                }
+                if (showScrollSpeedLimitDialog) {
+                    ComposableEditScrollSpeedLimitDialog(
+                        currentSpeedLimitPercent = playlist.scrollSpeedLimitPercent,
+                        speedLimitTextFieldValue = scrollSpeedLimitTextFieldValue,
+                        onSpeedLimitTextFieldValueChange = { scrollSpeedLimitTextFieldValue = it },
+                        onDismissRequestCb = { showScrollSpeedLimitDialog = false },
+                        onSave = onModifyScrollSpeedLimitPercent,
                         snackbarHostState = snackbarHostState,
                         scope = scope,
                         strings = strings,

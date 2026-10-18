@@ -32,7 +32,7 @@ object ImageDecodeCache {
 
     // Own SupervisorJob scope (like ThumbnailCache) so a warm() prefetch keeps running even if the
     // navigation that requested it (e.g. a quick double Next) moves on before it finishes.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashReporting.coroutineHandler)
 
     sealed interface Result {
         data class Loaded(val bitmap: ImageBitmap) : Result

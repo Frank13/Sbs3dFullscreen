@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.shared.SideBySideLikeliness
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -142,6 +143,12 @@ fun ImageScreen(
     showPhotoFilters: Boolean = true,
     checkLikelySideBySide: Boolean = true,
     halveLeftRightImages: Boolean = true,
+    // Set only while playing a playlist photo with "force fullscreen by scrolling" on (see
+    // FullscreenScrollStereoImage): the photo, its scrolling duration and the playlist's speed limit.
+    fullscreenScrollPhoto: PlaylistItem? = null,
+    fullscreenScrollDurationMs: Long? = null,
+    scrollSpeedLimitPercent: Float = 0f,
+    onFullscreenScrollDurationMs: (Long) -> Unit = {},
     shrinkControls: Boolean = false,
     initialMenuExpanded: Boolean = false,
     manualAlignMode: Boolean = false,
@@ -424,6 +431,9 @@ fun ImageScreen(
                         }
                     } else if (clickAlignMode && halveLeftRightImages) {
                         ClickAlignComparisonLayout(bitmap, halveLeftRightImages)
+                    } else if (fullscreenScrollPhoto != null && fullscreenScrollDurationMs != null && !manualAlignMode && !cropMode && cropRect == null) {
+                        FullscreenScrollStereoImage(bitmap, fullscreenScrollPhoto, fullscreenScrollDurationMs, halveLeftRightImages,
+                            scrollSpeedLimitPercent, onFullscreenScrollDurationMs)
                     } else {
                         StereoImage(bitmap, halveLeftRightImages, manualAlignOffsetX, manualAlignOffsetY, cropRect)
                     }

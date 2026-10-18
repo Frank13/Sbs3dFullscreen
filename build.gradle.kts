@@ -3,7 +3,7 @@ import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import java.io.File
 import java.util.Properties
 
-// Not checked in (see .gitignore) - holds this machine's GA4 Measurement Protocol credentials,
+// Not checked in (see .gitignore) - holds this machine's GA4 Measurement Protocol credentials and Sentry DSN,
 // read below and passed through as system properties the same way appVersion is. Missing/absent
 // keys resolve to "" rather than failing the build; Analytics.kt treats a blank value as
 // analytics-not-configured and simply never sends anything.
@@ -92,6 +92,9 @@ kotlin {
                 // its install folder). Deliberately not the vlcj library: it is GPLv3, which
                 // conflicts with distributing this app closed-source / on the Microsoft Store.
                 implementation("net.java.dev.jna:jna:5.14.0")
+                // Crash/error reporting (CrashReporting.kt) - Crashlytics has no desktop JVM SDK.
+                // MIT-licensed, so fine for closed-source/Store distribution.
+                implementation("io.sentry:sentry:8.61.0")
             }
         }
         commonTest.dependencies {
@@ -136,6 +139,8 @@ compose.desktop {
         // source so the api secret isn't sitting in plain text in git history.
         jvmArgs += "-Dga.measurementId=${localProperties.getProperty("ga.measurementId", "")}"
         jvmArgs += "-Dga.apiSecret=${localProperties.getProperty("ga.apiSecret", "")}"
+        // Sentry project DSN for CrashReporting.kt, same local.properties mechanism; blank = no reporting.
+        jvmArgs += "-Dsentry.dsn=${localProperties.getProperty("sentry.dsn", "")}"
 
         // OpenCV's native opencv_java*.dll: no -Djava.library.path here on purpose. Written into the
         // packaged app's .cfg, an absolute path to this machine's libs/opencv is wrong on users'

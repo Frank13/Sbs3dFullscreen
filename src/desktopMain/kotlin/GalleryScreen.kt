@@ -1,5 +1,6 @@
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
@@ -57,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import fr.camera3d.camera.common.ui_components.MouseScrollbar
 import fr.camera3d.camera.common.ui_components.ScreenWith3dotMenuAndSnackbar
 import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +108,26 @@ internal val windowsScrollbarStyle = ScrollbarStyle(
     unhoverColor = Color(0xFFC1C1C1),
     hoverColor = Color(0xFFA6A6A6),
 )
+
+/** The same scrollbar, provided by AppTheme to the screens/dialogs shared with the Android app. */
+internal val windowsMouseScrollbar = MouseScrollbar(windowsScrollbarStyle.thickness) { scrollState, modifier ->
+    WindowsVerticalScrollbar(adapter = rememberScrollbarAdapter(scrollState), modifier = modifier)
+}
+
+/** windowsScrollbarStyle'd vertical scrollbar on its light-gray track, for this app's own scrolling lists. */
+@Composable
+internal fun WindowsVerticalScrollbar(adapter: ScrollbarAdapter, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(windowsScrollbarStyle.thickness)
+            .background(windowsScrollbarTrackColor),
+    ) {
+        CompositionLocalProvider(LocalScrollbarStyle provides windowsScrollbarStyle) {
+            VerticalScrollbar(adapter = adapter, modifier = Modifier.fillMaxHeight())
+        }
+    }
+}
 
 // Decoded at ~2x the on-screen thumbnail size so it still looks sharp on hi-DPI displays.
 private const val thumbnailPixelWidth = 640
@@ -415,7 +437,7 @@ private object ThumbnailCache {
     // Own SupervisorJob scope (rather than tying decodes to whichever composable/effect triggered
     // them) so a warm() prefetch keeps running even if the row that requested it scrolls back out
     // of view and its LaunchedEffect is cancelled.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashReporting.coroutineHandler)
 
     private data class Key(val path: String, val lastModified: Long)
     private fun keyOf(file: File) = Key(file.path, file.lastModified())

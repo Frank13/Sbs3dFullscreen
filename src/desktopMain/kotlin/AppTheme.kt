@@ -6,6 +6,7 @@ import androidx.compose.material3.RippleDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import fr.camera3d.camera.common.ui_components.LocalMouseScrollbar
 
 // A bit more pronounced than the default hover state layer (8% content-color overlay), so
 // hovering any button in the app reads as a clearly lighter highlight rather than a barely
@@ -32,6 +33,11 @@ fun AppTheme(content: @Composable () -> Unit) {
                 )
             )
         }
-        CompositionLocalProvider(LocalRippleConfiguration provides hoverRippleConfiguration, content = content)
+        CompositionLocalProvider(
+            LocalRippleConfiguration provides hoverRippleConfiguration,
+            // Swaps the shared screens'/dialogs' touch-oriented chevron hint for the Windows scrollbar.
+            LocalMouseScrollbar provides windowsMouseScrollbar,
+            content = content,
+        )
     }
 }

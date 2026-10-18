@@ -1,6 +1,7 @@
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
@@ -865,6 +866,8 @@ class AppViewModel(initialFile: File?) {
 
     fun modifyIsAutomated(newValue: Boolean): Boolean = playlistEditor.modifyIsAutomated(newValue)
 
+    fun modifyScrollSpeedLimitPercent(newValue: Float): Boolean = playlistEditor.modifyScrollSpeedLimitPercent(newValue)
+
     fun modifySubtitle(newValue: String): Boolean = playlistEditor.modifySubtitle(newValue)
 
     fun modifyTitleZPercent(newValue: Float): Boolean = playlistEditor.modifyTitleZPercent(newValue)
@@ -915,6 +918,10 @@ class AppViewModel(initialFile: File?) {
         playlistEditor.modifyItemMuted(newValue)
     }
 
+    fun modifyItemFullscreenScroll(newValue: FullscreenScroll) {
+        playlistEditor.modifyItemFullscreenScroll(newValue)
+    }
+
     /** Deletes the photo open in the PlaylistItem screen: removes it from the playlist and from disk. */
     fun deletePlaylistItem(): Boolean = playlistEditor.deleteItem()
 
@@ -924,6 +931,24 @@ class AppViewModel(initialFile: File?) {
     fun closePlaylistEdit() {
         playlistEditor.closeEdit()
         screen = playlistEditor.returnFromChildScreen()
+    }
+
+    /**
+     * Drops every in-progress screen/tool state and lands back on Welcome - called by Main.kt's
+     * window exception handler after a UI crash, since whatever state was being rendered when it
+     * threw may well throw again if re-shown as-is.
+     */
+    fun resetAfterCrash() {
+        playingPlaylist = null
+        pendingNavigation = null
+        alignToast = null
+        saveToast = null
+        share.clearToast()
+        photoTools.resetAll()
+        gallery.close()
+        playlistEditor.closeItem()
+        playlistEditor.closeEdit()
+        screen = Screen.Welcome
     }
 
     fun closeImageView() {

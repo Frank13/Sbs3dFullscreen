@@ -198,6 +198,7 @@ class StoreScreenshotTest {
                 canRenamePlaylist = { true },
                 onModifyDefaultDuration = { true },
                 onModifyIsAutomated = { true },
+                onModifyScrollSpeedLimitPercent = { true },
                 onModifySubtitle = { true },
                 onModifyTitleZPercent = { true },
                 onModifySubtitleZPercent = { true },

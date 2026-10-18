@@ -67,6 +67,10 @@
     <string name="playlist_default_duration_label">Default duration</string>
     <string name="playlist_modify_default_duration_dialog_title">Modify slideshow default duration between images</string>
     <string name="playlist_default_duration_range_error">Default duration should be &gt; 0 and &lt;= 60s</string>
+    <string name="playlist_scroll_speed_limit">image scroll speed limit</string>
+    <string name="playlist_modify_scroll_speed_limit">Modify the image scroll speed limit</string>
+    <string name="playlist_scroll_speed_limit_documentation">% of the screen per second, for images forced to fullscreen by scrolling. Their slide duration is extended if needed. 0 = no limit</string>
+    <string name="playlist_scroll_speed_limit_range_error">Scroll speed limit should be &gt;= 0 and &lt;= 100%</string>
     <string name="playlist_delete_option">Delete playlist</string>
     <string name="playlist_delete_confirm_title">Delete playlist?</string>
     <string name="playlist_delete_confirm_ok">Delete</string>
@@ -91,6 +95,11 @@
     <string name="playlist_item_half_width_documentation_video">Whether the 3D video is a side-by-side full width or half width</string>
     <string name="playlist_item_muted_label">Muted</string>
     <string name="playlist_item_muted_documentation">When enabled, this video plays without sound during the slideshow</string>
+    <string name="playlist_item_fullscreen_scroll">Force fullscreen by scrolling</string>
+    <string name="playlist_item_fullscreen_scroll_documentation">during the slideshow, the left and right images fill their half screen and scroll in the chosen direction so that they are entirely seen during the slide duration</string>
+    <string name="playlist_item_fullscreen_scroll_manual_mode_warning">only available when the playlist is automated</string>
+    <string name="playlist_item_fullscreen_scroll_up_left">upwards/to the left</string>
+    <string name="playlist_item_fullscreen_scroll_down_right">downwards/to the right</string>
     <string name="playlist_item_delete_option">Delete photo</string>
     <string name="playlist_item_delete_option_video">Delete video</string>
     <string name="playlist_title_slide_hint">Press Space to start</string>
@@ -191,6 +200,10 @@
     <string name="analytics_consent_message">SBS 3D Viewer can send anonymous usage data (screens opened, errors encountered) to help me improve the app. No photos, filenames or personal data are ever sent. You can change your mind anytime.</string>
     <string name="analytics_consent_accept">Allow</string>
     <string name="analytics_consent_decline">Don't allow</string>
+    <string name="crash_recovered_title">Something went wrong</string>
+    <string name="crash_recovered_message">SBS 3D Viewer hit an unexpected error and went back to the home screen.</string>
+    <string name="crash_recovered_ok">OK</string>
+    <string name="crash_loop_message">SBS 3D Viewer keeps hitting an unexpected error and needs to close. Please restart it.</string>
     <string name="about_analytics_status_label">Usage analytics: %1$s</string>
     <string name="about_analytics_status_allowed">allowed</string>
     <string name="about_analytics_status_revoked">not allowed</string>

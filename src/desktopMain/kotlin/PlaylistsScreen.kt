@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -122,12 +124,25 @@ fun PlaylistsScreen(
                     Text(stringResource(Res.string.playlist_list_empty))
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-                    // Keyed by the real on-disk folder name (guaranteed unique within playlistsRoot),
-                    // not Playlist.getDirName() - that strips spaces for index-file lookup purposes
-                    // and can collapse two distinct folders (e.g. "essai 2" and "essai2") to the same key.
-                    items(playlists, key = { File(it.absolutePath).name }) { playlist ->
-                        ComposablePlaylistRow(playlist, onOpenPlaylist, playWithToast)
+                val listState = rememberLazyListState()
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(start = 8.dp, top = 8.dp, end = 8.dp + windowsScrollbarStyle.thickness, bottom = 8.dp),
+                    ) {
+                        // Keyed by the real on-disk folder name (guaranteed unique within playlistsRoot),
+                        // not Playlist.getDirName() - that strips spaces for index-file lookup purposes
+                        // and can collapse two distinct folders (e.g. "essai 2" and "essai2") to the same key.
+                        items(playlists, key = { File(it.absolutePath).name }) { playlist ->
+                            ComposablePlaylistRow(playlist, onOpenPlaylist, playWithToast)
+                        }
+                    }
+                    // Only shown once the list overflows, so a few playlists don't get an empty track.
+                    if (listState.canScrollForward || listState.canScrollBackward) {
+                        WindowsVerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(listState),
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                        )
                     }
                 }
             }

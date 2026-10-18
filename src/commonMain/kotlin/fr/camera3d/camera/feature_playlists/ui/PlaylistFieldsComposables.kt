@@ -169,6 +169,78 @@ fun ComposableEditDefaultDurationDialog(
     )
 }
 
+/** Formats a scroll speed limit, e.g. 5f -> "5%", 2.5f -> "2.5%" */
+fun formatScrollSpeedLimitPercent(percent: Float): String =
+    (if (percent % 1f == 0f) percent.toInt().toString() else percent.toString()) + "%"
+
+/**
+ * Displays the scroll speed limit of "force fullscreen by scrolling" photos and triggers onClick when
+ * tapped to request opening the edit dialog [ComposableEditScrollSpeedLimitDialog], see
+ * [ComposableEditDefaultDuration] for why the dialog is separate.
+ */
+@Composable
+fun ComposableEditScrollSpeedLimit(speedLimitPercent: Float, enabled: Boolean = true, strings: PlaylistScreenStrings, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.4f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        PortableParameterComposable(
+            parameterName = strings.scrollSpeedLimit,
+            parameterValue = formatScrollSpeedLimitPercent(speedLimitPercent),
+            onClick = { if (enabled) onClick() },
+        )
+    }
+}
+
+@Composable
+fun ComposableEditScrollSpeedLimitDialog(
+    currentSpeedLimitPercent: Float,
+    speedLimitTextFieldValue: String,
+    onSpeedLimitTextFieldValueChange: (String) -> Unit,
+    onDismissRequestCb: () -> Unit,
+    onSave: (newSpeedLimitPercent: Float) -> Boolean,
+    snackbarHostState: SnackbarHostState,
+    scope: CoroutineScope,
+    strings: PlaylistScreenStrings,
+) {
+    PortableOkCancelDialog(
+        dialogTitle = strings.modifyScrollSpeedLimit,
+        dialogOkLabel = strings.ok,
+        dialogCancelLabel = strings.cancel,
+        content = {
+            TextField(
+                value = speedLimitTextFieldValue,
+                suffix = { Text("%") },
+                supportingText = { Text(strings.scrollSpeedLimitDocumentation) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                onValueChange = onSpeedLimitTextFieldValueChange,
+            )
+        },
+        onDismissRequestCb = onDismissRequestCb,
+        okCallback = {
+            val newSpeedLimit = speedLimitTextFieldValue.trim().replace(',', '.').toFloatOrNull()
+            if (newSpeedLimit == null) {
+                snackbar(scope, snackbarHostState, strings.scrollSpeedLimitShouldBe0And100)
+            } else if (newSpeedLimit != currentSpeedLimitPercent) {
+                try {
+                    val done = onSave(newSpeedLimit)
+                    if (!done) {
+                        snackbar(scope, snackbarHostState, strings.scrollSpeedLimitShouldBe0And100)
+                    }
+                } catch (e: Exception) {
+                    if (e.message?.contains(" has no access to content") == true) {
+                        snackbar(scope, snackbarHostState, strings.cannotSavePlaylist)
+                    } else {
+                        snackbar(scope, snackbarHostState, strings.errorWhileSavingPlaylist.format(e.message ?: ""))
+                    }
+                }
+            }
+            onDismissRequestCb()
+        },
+    )
+}
+
 /** The playlist screen's 3-dot menu: delete option + confirmation dialog. */
 @Composable
 fun ComposablePlaylistMenu(

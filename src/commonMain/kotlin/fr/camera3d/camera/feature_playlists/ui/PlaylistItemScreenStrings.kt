@@ -28,5 +28,10 @@ data class PlaylistItemScreenStrings(
     val halfWidthDocumentationVideo: String,
     val muted: String,
     val mutedDocumentation: String,
+    val fullscreenScroll: String,
+    val fullscreenScrollDocumentation: String,
+    val fullscreenScrollManualModeWarning: String,
+    val fullscreenScrollUpLeft: String,
+    val fullscreenScrollDownRight: String,
     val deletePhotoOption: String,
 )

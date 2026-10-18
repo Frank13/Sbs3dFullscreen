@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
@@ -169,19 +170,32 @@ fun PortableOkCancelDialog(
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = AlertDialogDefaults.TonalElevation,
                 ) {
+                    val dialogPadding = 16.dp
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(dialogPadding),
                     ) {
                         if (dialogTitle.isNotEmpty()) {
                             Text(text = dialogTitle, style = MaterialTheme.typography.titleSmall)
                         }
                         // Only this middle section scrolls, so the title above and the buttons
                         // below stay pinned and are never hidden behind the keyboard.
-                        Column(
-                            modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                        ) {
-                            content()
+                        val scrollState = rememberScrollState()
+                        val mouseScrollbar = LocalMouseScrollbar.current
+                        Box(modifier = Modifier.weight(1f, fill = false)) {
+                            Column(
+                                modifier = Modifier
+                                    .verticalScroll(scrollState)
+                                    // The scrollbar mostly sits in the dialog padding (see its offset
+                                    // below), so only reserve the part of it that's wider than that.
+                                    .padding(end = ((mouseScrollbar?.thickness ?: 0.dp) - dialogPadding).coerceAtLeast(0.dp)),
+                            ) {
+                                content()
+                            }
+                            // Offset by the dialog padding so it hugs the dialog's edge rather than the content's.
+                            if (mouseScrollbar != null && scrollState.maxValue > 0) {
+                                mouseScrollbar.scrollbar(scrollState, Modifier.align(Alignment.CenterEnd).offset(x = dialogPadding))
+                            }
                         }
                         Row {
                             TextButton(onClick = cancelCallback) { Text(dialogCancelLabel) }

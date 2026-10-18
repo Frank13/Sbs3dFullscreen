@@ -67,6 +67,10 @@
     <string name="playlist_default_duration_label">Durée par défaut</string>
     <string name="playlist_modify_default_duration_dialog_title">Modifier la durée par défaut entre les photos du diaporama</string>
     <string name="playlist_default_duration_range_error">La durée par défaut doit être &gt; 0 et &lt;= 60s</string>
+    <string name="playlist_scroll_speed_limit">vitesse max de défilement des images</string>
+    <string name="playlist_modify_scroll_speed_limit">Modifier la vitesse max de défilement des images</string>
+    <string name="playlist_scroll_speed_limit_documentation">% de l'écran par seconde, pour les images forcées en plein écran par défilement. Leur durée d'affichage est allongée si nécessaire. 0 = pas de limite</string>
+    <string name="playlist_scroll_speed_limit_range_error">La vitesse max de défilement doit être &gt;= 0 et &lt;= 100%</string>
     <string name="playlist_delete_option">Supprimer le diaporama</string>
     <string name="playlist_delete_confirm_title">Supprimer le diaporama ?</string>
     <string name="playlist_delete_confirm_ok">Supprimer</string>
@@ -91,6 +95,11 @@
     <string name="playlist_item_half_width_documentation_video">Indique si la vidéo 3D est un côte-à-côte en pleine largeur ou en demi-largeur</string>
     <string name="playlist_item_muted_label">Muet</string>
     <string name="playlist_item_muted_documentation">Si activé, cette vidéo est lue sans son pendant le diaporama</string>
+    <string name="playlist_item_fullscreen_scroll">Forcer le plein écran en faisant défiler</string>
+    <string name="playlist_item_fullscreen_scroll_documentation">pendant le diaporama, les images gauche et droite remplissent leur demi-écran et défilent dans la direction choisie pour être vues en entier pendant la durée de la diapositive</string>
+    <string name="playlist_item_fullscreen_scroll_manual_mode_warning">disponible uniquement quand le diaporama est automatique</string>
+    <string name="playlist_item_fullscreen_scroll_up_left">vers le haut/gauche</string>
+    <string name="playlist_item_fullscreen_scroll_down_right">vers le bas/droite</string>
     <string name="playlist_item_delete_option">Supprimer la photo</string>
     <string name="playlist_item_delete_option_video">Supprimer la vidéo</string>
     <string name="playlist_title_slide_hint">Appuyez sur Espace pour commencer</string>
@@ -191,6 +200,10 @@
     <string name="analytics_consent_message">SBS 3D Viewer peut envoyer des données d'utilisation anonymes (écrans ouverts, erreurs rencontrées) pour m'aider à améliorer l'application. Aucune photo, nom de fichier ou donnée personnelle n'est jamais envoyée. Vous pouvez changer d'avis à tout moment.</string>
     <string name="analytics_consent_accept">Autoriser</string>
     <string name="analytics_consent_decline">Ne pas autoriser</string>
+    <string name="crash_recovered_title">Un problème est survenu</string>
+    <string name="crash_recovered_message">SBS 3D Viewer a rencontré une erreur inattendue et est revenu à l'écran d'accueil.</string>
+    <string name="crash_recovered_ok">OK</string>
+    <string name="crash_loop_message">SBS 3D Viewer rencontre une erreur inattendue à répétition et doit se fermer. Veuillez le relancer.</string>
     <string name="about_analytics_status_label">Données d'utilisation : %1$s</string>
     <string name="about_analytics_status_allowed">autorisées</string>
     <string name="about_analytics_status_revoked">non autorisées</string>

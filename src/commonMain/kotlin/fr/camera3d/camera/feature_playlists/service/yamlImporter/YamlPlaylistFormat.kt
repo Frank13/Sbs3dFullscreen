@@ -3,6 +3,7 @@ package fr.camera3d.camera.feature_playlists.service.yamlImporter
 // SHARED FILE: kept identical between CameraSync3D (Android) and sbs3Dfullscreen (Desktop).
 // Must stay free of android.* / desktop-only imports. Sync via tools/sync-from-android.ps1.
 
+import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.TextFontFamily
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
@@ -31,7 +32,12 @@ data class YamlPlaylistItemV1(val filename : String,
                               val duration : Int = -1,
                               val isHalfWidth : Boolean = false,
                               val isVideo : Boolean = false,
-                              val isMuted : Boolean = false)
+                              val isMuted : Boolean = false,
+                              val fullscreenScroll : String = "") // FullscreenScroll name, "" means NONE
+
+/** Converts the YAML fullscreenScroll value to its enum, NONE for a missing or unknown value */
+fun String.toFullscreenScroll() : FullscreenScroll =
+    runCatching { FullscreenScroll.valueOf(this) }.getOrDefault(FullscreenScroll.NONE)
 
 /**
  * YAML definition for a title/subtitle text style. All fields are nullable: a missing field
@@ -101,6 +107,7 @@ data class YamlPlaylistV1(val formatVersion : Float,
                           val titleStyle : YamlTextStyleV1? = null,
                           val subtitleStyle : YamlTextStyleV1? = null,
                           val isAutomated : Boolean = true,
+                          val scrollSpeedLimitPercent : Float = 5f, // % of the screen per second
                           val soundtrack : List<String> = listOf(), // mp3 filenames played one after the other
                           val photos : List<YamlPlaylistItemV1> = listOf() // list of the playlist photos
 )
@@ -132,6 +139,7 @@ fun PlaylistToYAML(p: Playlist) : String{
             p.titleStyle.toYamlBlock("titleStyle", TextStyleConfig.TITLE_DEFAULT) +
             p.subtitleStyle.toYamlBlock("subtitleStyle", TextStyleConfig.SUBTITLE_DEFAULT) +
             if (!p.isAutomated) {"isAutomated : false\n"} else {""} +
+            if (p.scrollSpeedLimitPercent != 5f) {"scrollSpeedLimitPercent : ${p.scrollSpeedLimitPercent}\n"} else {""} +
             if (p.soundtrack.isNotEmpty()) {"soundtrack :\n" + p.soundtrack.joinToString("") { "- \"$it\"\n" }} else {""} +
             if (p.photos.isNotEmpty()) {"photos :\n"} else {""}
     val items = p.photos.map {"- filename : \"${it.filename}\"\n" + // WARNING 1+ space after ":" is important
@@ -143,7 +151,8 @@ fun PlaylistToYAML(p: Playlist) : String{
             if (it.transition != "") {"  transition : \"${it.transition}\"\n"} else {""} +
             if (it.isHalfWidth) {"  isHalfWidth : true\n"} else {""} +
             if (it.isVideo) {"  isVideo : true\n"} else {""} +
-            if (it.isMuted) {"  isMuted : true\n"} else {""}
+            if (it.isMuted) {"  isMuted : true\n"} else {""} +
+            if (it.fullscreenScroll != FullscreenScroll.NONE) {"  fullscreenScroll : \"${it.fullscreenScroll.name}\"\n"} else {""}
     }
     val itemsStr = items.joinToString("")
     return "$playlistCore$itemsStr"

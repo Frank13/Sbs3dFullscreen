@@ -18,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,8 @@ import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
  * a "depth shift" (stereo altitude) percentage of half the screen width, so it reads correctly in
  * 3D. Ported from BeamerPresentation.kt's ComposableBeamerTitleSlide, dropping its
  * beamer-only logo-layer/left-right-inversion support (stays Android-side, layered around this).
+ * [eyeAspectRatio]: when set (e.g. 16f / 9f for a full-SBS screen), each eye view is letterboxed to
+ * that ratio inside its half; null fills the whole half (half-SBS, stretched 2x by the display).
  */
 @Composable
 fun ComposablePortableTitleSlide(
@@ -49,19 +52,39 @@ fun ComposablePortableTitleSlide(
     titleStyle: TextStyleConfig = TextStyleConfig.TITLE_DEFAULT,
     subtitleShiftPercent: Float = 0f,
     subtitleStyle: TextStyleConfig = TextStyleConfig.SUBTITLE_DEFAULT,
+    eyeAspectRatio: Float? = null,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val halfWidth = maxWidth / 2
-        val titleShift = halfWidth * titleShiftPercent
-        val subtitleShift = halfWidth * subtitleShiftPercent
-        Row(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().weight(1f)) { // left
-                ComposablePortableTitleHalf(title, titleStyle, -titleShift / 2, subtitle, subtitleStyle, -subtitleShift / 2)
-            }
-            Box(Modifier.fillMaxSize().weight(1f)) { // right
-                ComposablePortableTitleHalf(title, titleStyle, titleShift / 2, subtitle, subtitleStyle, subtitleShift / 2)
-            }
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) { // left
+            ComposablePortableTitleEye(eyeAspectRatio, -1f, title, titleStyle, titleShiftPercent, subtitle, subtitleStyle, subtitleShiftPercent)
         }
+        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) { // right
+            ComposablePortableTitleEye(eyeAspectRatio, 1f, title, titleStyle, titleShiftPercent, subtitle, subtitleStyle, subtitleShiftPercent)
+        }
+    }
+}
+
+/**
+ * One eye's view of the title slide: fills its half, or with [eyeAspectRatio] the largest box of
+ * that ratio centered in it (e.g. 16:9 for full-SBS so the layout matches the style editor's
+ * preview). Depth shifts are a % of this eye view's width; [shiftSign] is -1 left, +1 right.
+ */
+@Composable
+private fun ComposablePortableTitleEye(
+    eyeAspectRatio: Float?,
+    shiftSign: Float,
+    title: String,
+    titleStyle: TextStyleConfig,
+    titleShiftPercent: Float,
+    subtitle: String,
+    subtitleStyle: TextStyleConfig,
+    subtitleShiftPercent: Float,
+) {
+    val eyeModifier = if (eyeAspectRatio != null) Modifier.aspectRatio(eyeAspectRatio) else Modifier.fillMaxSize()
+    BoxWithConstraints(eyeModifier) {
+        val titleShift = maxWidth * titleShiftPercent * shiftSign / 2
+        val subtitleShift = maxWidth * subtitleShiftPercent * shiftSign / 2
+        ComposablePortableTitleHalf(title, titleStyle, titleShift, subtitle, subtitleStyle, subtitleShift)
     }
 }
 

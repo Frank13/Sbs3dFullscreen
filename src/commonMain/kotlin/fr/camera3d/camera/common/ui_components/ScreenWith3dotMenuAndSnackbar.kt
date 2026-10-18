@@ -30,10 +30,30 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+/**
+ * A mouse-oriented vertical scrollbar, drawn instead of the touch-oriented [ScrollDownHint] by
+ * [ScreenWith3dotMenuAndSnackbar] and inside PortableOkCancelDialog's scrollable area.
+ * @param thickness : width reserved at the end of the scrolled content so the scrollbar doesn't cover it
+ * @param scrollbar : draws the scrollbar for the given state; only called once the content overflows
+ */
+class MouseScrollbar(
+    val thickness: Dp,
+    val scrollbar: @Composable (scrollState: ScrollState, modifier: Modifier) -> Unit,
+)
+
+/**
+ * Null (the default, used by the Android app) keeps the bouncing chevron hint. The desktop app
+ * provides its Windows-style scrollbar here - Compose's VerticalScrollbar only exists on desktop,
+ * so this shared file can't call it directly.
+ */
+val LocalMouseScrollbar = staticCompositionLocalOf<MouseScrollbar?> { null }
 
 /**
  * @param screenTitle
@@ -75,13 +95,18 @@ fun ScreenWith3dotMenuAndSnackbar(screenTitle : String,
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets
     ) { innerPadding ->
         if (scrollable) {
+            val mouseScrollbar = LocalMouseScrollbar.current
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                Column(modifier = Modifier.fillMaxSize().padding(start=8.dp, end=8.dp, top=8.dp)
+                Column(modifier = Modifier.fillMaxSize().padding(start=8.dp, end=8.dp + (mouseScrollbar?.thickness ?: 0.dp), top=8.dp)
                     .verticalScroll(scrollState),
                 ) {
                     screenContent()
                 }
-                if (scrollState.canScrollForward) {
+                if (mouseScrollbar != null) {
+                    if (scrollState.maxValue > 0) {
+                        mouseScrollbar.scrollbar(scrollState, Modifier.align(Alignment.CenterEnd))
+                    }
+                } else if (scrollState.canScrollForward) {
                     ScrollDownHint(modifier = Modifier.align(Alignment.BottomCenter))
                 }
             }
