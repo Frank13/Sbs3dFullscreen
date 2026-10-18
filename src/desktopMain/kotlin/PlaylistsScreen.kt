@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
@@ -74,6 +75,8 @@ fun PlaylistsScreen(
     onPlayPlaylist: (Playlist) -> Boolean,
     onCreatePlaylist: (String) -> Unit,
     canCreatePlaylist: (String) -> Boolean,
+    // Hoisted by Main.kt so the scroll position survives opening/playing a playlist and coming back.
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -124,7 +127,6 @@ fun PlaylistsScreen(
                     Text(stringResource(Res.string.playlist_list_empty))
                 }
             } else {
-                val listState = rememberLazyListState()
                 Box(Modifier.fillMaxSize()) {
                     LazyColumn(
                         state = listState,

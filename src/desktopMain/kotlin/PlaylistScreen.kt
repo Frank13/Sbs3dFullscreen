@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -95,10 +96,11 @@ fun PlaylistScreen(
     onReorderPhotos: (List<PlaylistItem>) -> Unit,
     onDelete: () -> Boolean,
     onOpenPlaylistItem: (Int) -> Unit,
+    // Hoisted by Main.kt so the scroll position survives opening a playlist item and coming back.
+    lazyListState: LazyListState = rememberLazyListState(),
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val lazyListState = rememberLazyListState()
     val vlcMissingToast = stringResource(Res.string.vlc_missing_cannot_play_toast)
 
     val strings = PlaylistScreenStrings(

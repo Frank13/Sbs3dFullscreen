@@ -1,6 +1,7 @@
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +103,20 @@ private fun runApp(args: Array<String>) = application {
     // including anything remembered inside GalleryScreen) so the scroll position survives
     // Gallery -> ImageView -> Gallery round-trips.
     val galleryListState = rememberLazyListState()
+    // Same hoisting for the playlist editor, so its scroll position survives PlaylistEdit ->
+    // PlaylistItem -> PlaylistEdit (and playing the playlist) round-trips. Reset whenever we're
+    // back on a screen a (possibly different) playlist gets opened from, so a newly opened
+    // playlist starts at the top.
+    var playlistEditListState by remember { mutableStateOf(LazyListState()) }
+    // Same for the playlist list (PlaylistList -> PlaylistEdit/playing -> PlaylistList), reset
+    // only when leaving the playlists section through the Welcome screen.
+    var playlistListState by remember { mutableStateOf(LazyListState()) }
+    LaunchedEffect(viewModel.screen) {
+        if (viewModel.screen == Screen.PlaylistList || viewModel.screen == Screen.Welcome) {
+            playlistEditListState = LazyListState()
+        }
+        if (viewModel.screen == Screen.Welcome) playlistListState = LazyListState()
+    }
     val undecorated = viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView
 
     // Remembers the window's placement/size/position from just before entering the
@@ -563,6 +578,7 @@ private fun runApp(args: Array<String>) = application {
                                             viewModel.startCreatePlaylist(name)
                                         },
                                         canCreatePlaylist = viewModel::canCreatePlaylist,
+                                        listState = playlistListState,
                                     )
 
                                     Screen.PlaylistEdit -> viewModel.playlistEditor.editing?.let { playlist ->
@@ -570,6 +586,7 @@ private fun runApp(args: Array<String>) = application {
                                         val addMusicDialogTitle = stringResource(Res.string.playlist_add_music_dialog_title)
                                         PlaylistScreen(
                                             playlist = playlist,
+                                            lazyListState = playlistEditListState,
                                             onAddMusic = {
                                                 val files = chooseMusicFiles(window = window, title = addMusicDialogTitle, extensions = arrayOf("mp3", "m4a", "wav", "ogg", "flac"))
                                                 if (files.isNotEmpty()) viewModel.addSoundtrackToEditingPlaylist(files)
