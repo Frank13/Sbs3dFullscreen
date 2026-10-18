@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +39,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
 import sbs3dViewer.resources.icon
+import sbs3dViewer.resources.about_analytics_grant_button
 import sbs3dViewer.resources.about_analytics_revoke_button
 import sbs3dViewer.resources.about_analytics_status_allowed
 import sbs3dViewer.resources.about_analytics_status_label
@@ -158,14 +160,25 @@ fun AboutScreen(onBack: () -> Unit) {
                     )
                 )
                 Spacer(Modifier.height(8.dp))
-                Button(
-                    enabled = analyticsConsentGranted,
-                    onClick = {
-                        Analytics.setConsent(false)
-                        analyticsConsentGranted = false
-                    },
-                ) {
-                    Text(stringResource(Res.string.about_analytics_revoke_button))
+                // Granting is the filled call-to-action; revoking is deliberately the quieter outlined style.
+                if (analyticsConsentGranted) {
+                    OutlinedButton(
+                        onClick = {
+                            Analytics.setConsent(false)
+                            analyticsConsentGranted = false
+                        },
+                    ) {
+                        Text(stringResource(Res.string.about_analytics_revoke_button))
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            Analytics.setConsent(true)
+                            analyticsConsentGranted = true
+                        },
+                    ) {
+                        Text(stringResource(Res.string.about_analytics_grant_button))
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
             }

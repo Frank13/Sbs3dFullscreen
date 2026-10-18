@@ -208,6 +208,7 @@
     <string name="about_analytics_status_allowed">allowed</string>
     <string name="about_analytics_status_revoked">not allowed</string>
     <string name="about_analytics_revoke_button">Revoke analytics permission</string>
+    <string name="about_analytics_grant_button">Allow usage analytics</string>
     <string name="about_whats_new_button">Release history</string>
     <string name="welcome_desktop_shortcut_button">Create desktop shortcut</string>
     <string name="welcome_desktop_shortcut_failed">Could not create the desktop shortcut</string>

@@ -208,6 +208,7 @@
     <string name="about_analytics_status_allowed">autorisées</string>
     <string name="about_analytics_status_revoked">non autorisées</string>
     <string name="about_analytics_revoke_button">Révoquer l'autorisation des données d'utilisation</string>
+    <string name="about_analytics_grant_button">Autoriser les données d'utilisation</string>
     <string name="about_whats_new_button">Historique des versions</string>
     <string name="welcome_desktop_shortcut_button">Créer un raccourci sur le bureau</string>
     <string name="welcome_desktop_shortcut_failed">Impossible de créer le raccourci sur le bureau</string>
