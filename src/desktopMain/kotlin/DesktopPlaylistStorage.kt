@@ -40,9 +40,9 @@ class DesktopPlaylistStorage(private val rootDir: File) : PlaylistStorage {
         val dir = folderFor(playlistDirName)
         val files = dir.listFiles { f -> f.isFile && (f.extension.equals("jpg", ignoreCase = true) || f.extension.equals("jpeg", ignoreCase = true)) }
             ?: emptyArray()
-        // toPath().toUri(), not File.toURI() - see the comment on the same call in
-        // AppViewModel.addPhotosToEditingPlaylist for why the single-slash form breaks coil3 on Windows.
-        return files.sortedBy { it.name }.map { it.name to it.toPath().toUri().toString() }
+        // toPath().toUri().toASCIIString(), not File.toURI()/toString() - see the comment on the same
+        // call in PlaylistEditorState.addPhotos for why those break coil3 on Windows.
+        return files.sortedBy { it.name }.map { it.name to it.toPath().toUri().toASCIIString() }
     }
 
     override fun resolvePhotoUri(fullPlaylistFolder: String, playlistDirName: String, filename: String, withFileVerification: Boolean): String {
@@ -50,7 +50,8 @@ class DesktopPlaylistStorage(private val rootDir: File) : PlaylistStorage {
         if (withFileVerification && !f.exists()) {
             throw Exception("Yaml : $filename does not exists")
         }
-        return f.toPath().toUri().toString()
+        // toASCIIString(): see listJpegs.
+        return f.toPath().toUri().toASCIIString()
     }
 
     override fun resolveAbsoluteFolder(fullPlaylistFolder: String, playlistDirName: String, yamlIndexName: String): String =

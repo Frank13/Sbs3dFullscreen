@@ -166,8 +166,12 @@ class PlaylistEditorState {
             // "file:/C:/..." single-slash form, which coil3's Uri parser mis-parses: it treats the
             // drive letter's ':' as a second scheme separator and drops "C:" from the path, so the
             // thumbnail fails to load. Path.toUri() emits the unambiguous "file:///C:/..." form.
+            // toASCIIString(), not toString(): toString() leaves non-ASCII chars (e.g. an accented
+            // playlist folder name) unescaped next to %-escapes like "SBS%203D%20Viewer", and
+            // coil3's percent-decoder truncates each unescaped char to one byte (Uri.kt's
+            // `code.toByte()`), turning "è" into "�" so the thumbnail's file is never found.
             val isVideo = isVideoFilename(destName)
-            PlaylistItem(destName, dest.toPath().toUri().toString(), isHalfWidth = isVideo, isVideo = isVideo)
+            PlaylistItem(destName, dest.toPath().toUri().toASCIIString(), isHalfWidth = isVideo, isVideo = isVideo)
         }
         val updatedPlaylist = playlist.copy(photos = playlist.photos + copiedItems)
         updatedPlaylist.save(storage)
