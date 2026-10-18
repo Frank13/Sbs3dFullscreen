@@ -228,4 +228,8 @@
     <string name="whats_new_v105_item_1">Add background music to your playlists</string>
     <string name="whats_new_v105_item_2">Clear message when VLC is missing</string>
     <string name="whats_new_v105_item_3">Music fades out at the end of a playlist</string>
+    <!-- v1.1.1 -->
+    <string name="whats_new_v111_item_1">Playlist photos can scroll to fill the whole screen</string>
+    <string name="whats_new_v111_item_2">Create a desktop shortcut from the home screen</string>
+    <string name="whats_new_v111_item_3">Scrollbars added, and lists keep their scroll position</string>
 </resources>

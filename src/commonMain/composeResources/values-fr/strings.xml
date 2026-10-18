@@ -228,4 +228,8 @@
     <string name="whats_new_v105_item_1">Ajoutez de la musique de fond à vos diaporamas</string>
     <string name="whats_new_v105_item_2">Message clair quand VLC n'est pas installé</string>
     <string name="whats_new_v105_item_3">La musique s'atténue à la fin du diaporama</string>
+    <!-- v1.1.1 -->
+    <string name="whats_new_v111_item_1">Défilement plein écran des photos de diaporama</string>
+    <string name="whats_new_v111_item_2">Créez un raccourci sur le bureau depuis l'écran d'accueil</string>
+    <string name="whats_new_v111_item_3">Barres de défilement et retour à la même position</string>
 </resources>

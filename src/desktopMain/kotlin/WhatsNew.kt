@@ -26,6 +26,9 @@ import sbs3dViewer.resources.Res
 import sbs3dViewer.resources.whats_new_got_it
 import sbs3dViewer.resources.whats_new_history_title
 import sbs3dViewer.resources.whats_new_title
+import sbs3dViewer.resources.whats_new_v111_item_1
+import sbs3dViewer.resources.whats_new_v111_item_2
+import sbs3dViewer.resources.whats_new_v111_item_3
 import sbs3dViewer.resources.whats_new_v105_item_1
 import sbs3dViewer.resources.whats_new_v105_item_2
 import sbs3dViewer.resources.whats_new_v105_item_3
@@ -38,6 +41,14 @@ data class WhatsNewRelease(val versionName: String, val items: List<StringResour
 // Add new releases at the top (newest first). versionName must match gradle.properties' appVersion
 // for the release to be announced - see the /whats-new-release skill.
 val allWhatsNewReleases: List<WhatsNewRelease> = listOf(
+    WhatsNewRelease(
+        versionName = "1.1.1",
+        items = listOf(
+            Res.string.whats_new_v111_item_1,
+            Res.string.whats_new_v111_item_2,
+            Res.string.whats_new_v111_item_3,
+        )
+    ),
     WhatsNewRelease(
         versionName = "1.0.5",
         items = listOf(

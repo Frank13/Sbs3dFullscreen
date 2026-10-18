@@ -73,6 +73,7 @@ private val openSourceLibraries = listOf(
     OpenSourceLibrary("Apache Commons Imaging", "Apache License 2.0"),
     OpenSourceLibrary("OpenCV", "Apache License 2.0"),
     OpenSourceLibrary("JNA", "Apache License 2.0"),
+    OpenSourceLibrary("Sentry Java SDK", "MIT License"),
     OpenSourceLibrary("Skiko", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Lifecycle, SavedState, Collection (via Compose Multiplatform)", "Apache License 2.0"),
     OpenSourceLibrary("kotlinx.serialization, kotlinx-datetime, atomicfu", "Apache License 2.0"),
