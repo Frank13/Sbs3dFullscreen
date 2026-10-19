@@ -6,9 +6,10 @@ package fr.camera3d.camera.feature_playlists.domain
 enum class TextFontFamily { DEFAULT, SERIF, SANS_SERIF, MONOSPACE, CURSIVE }
 
 /**
- * Style + on-screen bounding-box position for a piece of title-slide text (title or subtitle).
+ * Style + on-screen bounding-box position for a piece of slide text (title, subtitle or credits).
  * topPercent/leftPercent/rightPercent behave like CSS `position: absolute; top; left; right`:
  * the box's width is `100% - leftPercent - rightPercent` and text is centered within it.
+ * bottomPercent is only used by the credits, whose box height is `100% - topPercent - bottomPercent`.
  */
 data class TextStyleConfig(
     val fontFamily: TextFontFamily = TextFontFamily.DEFAULT,
@@ -22,9 +23,11 @@ data class TextStyleConfig(
     val topPercent: Float = 40f,
     val leftPercent: Float = 10f,
     val rightPercent: Float = 10f,
+    val bottomPercent: Float = 0f, // credits only
 ) {
     companion object {
         val TITLE_DEFAULT = TextStyleConfig()
         val SUBTITLE_DEFAULT = TextStyleConfig(fontSizePercent = 10f, topPercent = 55f)
+        val CREDITS_DEFAULT = TextStyleConfig(fontSizePercent = 6f, topPercent = 0f, leftPercent = 0f, rightPercent = 0f, bottomPercent = 0f)
     }
 }

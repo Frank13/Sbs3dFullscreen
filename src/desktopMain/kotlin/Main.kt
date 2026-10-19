@@ -613,6 +613,10 @@ private fun runApp(args: Array<String>) = application {
                                             onModifySubtitleZPercent = viewModel::modifySubtitleZPercent,
                                             onModifyTitleStyle = viewModel::modifyTitleStyle,
                                             onModifySubtitleStyle = viewModel::modifySubtitleStyle,
+                                            onModifyCredits = viewModel::modifyCredits,
+                                            onModifyCreditsZPercent = viewModel::modifyCreditsZPercent,
+                                            onModifyCreditsStyle = viewModel::modifyCreditsStyle,
+                                            onModifyCreditsPlacement = viewModel::modifyCreditsPlacement,
                                             onReorderPhotos = viewModel::applyPhotosReorder,
                                             onDelete = viewModel::deletePlaylist,
                                             onOpenPlaylistItem = { index -> viewModel.openPlaylistItem(index) },
@@ -644,9 +648,10 @@ private fun runApp(args: Array<String>) = application {
                                         PlaylistSoundtrack(
                                             playlist = it,
                                             // keeps playing over the end slide, fading out during its animation
+                                            // (so only once its credits, if any, have rolled)
                                             playing = viewModel.playlistSlideKind == PlaylistSlideKind.PHOTO ||
                                                 viewModel.playlistSlideKind == PlaylistSlideKind.END,
-                                            fadingOut = viewModel.playlistSlideKind == PlaylistSlideKind.END,
+                                            fadingOut = viewModel.playlistSlideKind == PlaylistSlideKind.END && !viewModel.isCreditsRolling,
                                             mutedForVideo = viewModel.currentPlaylistItem?.let { item -> item.isVideo && !item.isMuted } == true,
                                             audioOutputDeviceId = viewModel.audioOutputDeviceId,
                                         )
@@ -661,8 +666,12 @@ private fun runApp(args: Array<String>) = application {
                                             }
                                             PlaylistTitleScreen(it, shrinkControls = viewModel.shrinkControls)
                                         }
-                                        PlaylistSlideKind.END -> PlaylistEndScreen(shrinkControls = viewModel.shrinkControls)
-                                        PlaylistSlideKind.PHOTO, null -> if (viewModel.currentPlaylistItem?.isVideo == true) {
+                                        PlaylistSlideKind.END -> PlaylistEndScreen(
+                                            shrinkControls = viewModel.shrinkControls,
+                                            creditsPlaylist = viewModel.playingPlaylist.takeIf { viewModel.isCreditsRolling },
+                                            onCreditsEnded = viewModel::onCreditsEnded,
+                                        )
+                                        PlaylistSlideKind.PHOTO, null -> Box(Modifier.fillMaxSize()) { if (viewModel.currentPlaylistItem?.isVideo == true) {
                                             // A video slide auto-advances on natural playback end
                                             // (or loops forever in a manual playlist) instead of the
                                             // fixed-duration timer below - see PlaylistVideoSlide's doc.
@@ -805,6 +814,11 @@ private fun runApp(args: Array<String>) = application {
                                                     onDialogShownChanged = { imageDialogShown = it },
                                                 )
                                             }
+                                        }
+                                        // credits rolling over the last photo, after its normal duration (see AppViewModel.isCreditsRolling)
+                                        if (viewModel.isCreditsRolling) viewModel.playingPlaylist?.let {
+                                            PlaylistCreditsRoll(it, viewModel.shrinkControls, viewModel::onCreditsEnded)
+                                        }
                                         }
                                     }
                                     }

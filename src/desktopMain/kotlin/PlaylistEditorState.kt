@@ -1,6 +1,7 @@
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
 import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
@@ -310,6 +311,27 @@ class PlaylistEditorState {
 
     fun modifySubtitleStyle(newValue: TextStyleConfig): Boolean {
         save((editing ?: return false).copy(subtitleStyle = newValue))
+        return true
+    }
+
+    /** Updates the playlist credits (multi-line text rolling on the end slide or over the last image), "" for no credits. */
+    fun modifyCredits(newValue: String): Boolean {
+        save((editing ?: return false).copy(credits = newValue))
+        return true
+    }
+
+    fun modifyCreditsZPercent(newValue: Float): Boolean {
+        save((editing ?: return false).copy(creditsZPercent = newValue))
+        return true
+    }
+
+    fun modifyCreditsStyle(newValue: TextStyleConfig): Boolean {
+        save((editing ?: return false).copy(creditsStyle = newValue))
+        return true
+    }
+
+    fun modifyCreditsPlacement(newValue: CreditsPlacement): Boolean {
+        save((editing ?: return false).copy(creditsPlacement = newValue))
         return true
     }
 

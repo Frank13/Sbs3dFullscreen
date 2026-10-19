@@ -3,6 +3,7 @@ package fr.camera3d.camera.feature_playlists.service.yamlImporter
 // SHARED FILE: kept identical between CameraSync3D (Android) and sbs3Dfullscreen (Desktop).
 // Must stay free of android.* / desktop-only imports. Sync via tools/sync-from-android.ps1.
 
+import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
 import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.TextFontFamily
@@ -39,9 +40,20 @@ data class YamlPlaylistItemV1(val filename : String,
 fun String.toFullscreenScroll() : FullscreenScroll =
     runCatching { FullscreenScroll.valueOf(this) }.getOrDefault(FullscreenScroll.NONE)
 
+/** Converts the YAML creditsPlacement value to its enum, END_SLIDE for a missing or unknown value */
+fun String.toCreditsPlacement() : CreditsPlacement =
+    runCatching { CreditsPlacement.valueOf(this) }.getOrDefault(CreditsPlacement.END_SLIDE)
+
 /**
- * YAML definition for a title/subtitle text style. All fields are nullable: a missing field
- * means "inherit the built-in default" (TextStyleConfig.TITLE_DEFAULT / SUBTITLE_DEFAULT).
+ * Returns [s] as a YAML double-quoted scalar, escaping backslashes, quotes and line breaks
+ * so that a multi-line text (e.g. the credits) fits on a single YAML line
+ */
+fun yamlDoubleQuoted(s: String) : String =
+    "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "\\n") + "\""
+
+/**
+ * YAML definition for a title/subtitle/credits text style. All fields are nullable: a missing field
+ * means "inherit the built-in default" (TextStyleConfig.TITLE_DEFAULT / SUBTITLE_DEFAULT / CREDITS_DEFAULT).
  */
 data class YamlTextStyleV1(val fontFamily : String? = null,
                            val fontSizePercent : Float? = null, // % of slide height
@@ -54,7 +66,8 @@ data class YamlTextStyleV1(val fontFamily : String? = null,
                            val backgroundOpacityPercent : Float? = null,
                            val topPercent : Float? = null,
                            val leftPercent : Float? = null,
-                           val rightPercent : Float? = null)
+                           val rightPercent : Float? = null,
+                           val bottomPercent : Float? = null)
 
 fun YamlTextStyleV1?.toTextStyleConfig(default: TextStyleConfig) : TextStyleConfig {
     if (this == null) return default
@@ -71,6 +84,7 @@ fun YamlTextStyleV1?.toTextStyleConfig(default: TextStyleConfig) : TextStyleConf
         topPercent = topPercent ?: default.topPercent,
         leftPercent = leftPercent ?: default.leftPercent,
         rightPercent = rightPercent ?: default.rightPercent,
+        bottomPercent = bottomPercent ?: default.bottomPercent,
     )
 }
 
@@ -89,7 +103,8 @@ fun TextStyleConfig.toYamlBlock(blockName: String, default: TextStyleConfig) : S
             (if (backgroundOpacityPercent != default.backgroundOpacityPercent) {"  backgroundOpacityPercent : $backgroundOpacityPercent\n"} else {""}) +
             (if (topPercent != default.topPercent) {"  topPercent : $topPercent\n"} else {""}) +
             (if (leftPercent != default.leftPercent) {"  leftPercent : $leftPercent\n"} else {""}) +
-            (if (rightPercent != default.rightPercent) {"  rightPercent : $rightPercent\n"} else {""})
+            (if (rightPercent != default.rightPercent) {"  rightPercent : $rightPercent\n"} else {""}) +
+            (if (bottomPercent != default.bottomPercent) {"  bottomPercent : $bottomPercent\n"} else {""})
     return if (fields.isEmpty()) {""} else {"$blockName :\n$fields"}
 }
 
@@ -109,6 +124,10 @@ data class YamlPlaylistV1(val formatVersion : Float,
                           val isAutomated : Boolean = true,
                           val scrollSpeedLimitPercent : Float = 5f, // % of the screen per second
                           val soundtrack : List<String> = listOf(), // mp3 filenames played one after the other
+                          val credits : String = "", // multi-line, written with \n escapes
+                          val creditsZ : Float = 0f,
+                          val creditsStyle : YamlTextStyleV1? = null,
+                          val creditsPlacement : String = "", // CreditsPlacement name, "" means END_SLIDE
                           val photos : List<YamlPlaylistItemV1> = listOf() // list of the playlist photos
 )
 
@@ -141,6 +160,10 @@ fun PlaylistToYAML(p: Playlist) : String{
             if (!p.isAutomated) {"isAutomated : false\n"} else {""} +
             if (p.scrollSpeedLimitPercent != 5f) {"scrollSpeedLimitPercent : ${p.scrollSpeedLimitPercent}\n"} else {""} +
             if (p.soundtrack.isNotEmpty()) {"soundtrack :\n" + p.soundtrack.joinToString("") { "- \"$it\"\n" }} else {""} +
+            if (p.credits != "") {"credits : ${yamlDoubleQuoted(p.credits)}\n"} else {""} +
+            if (p.creditsZPercent != 0f) {"creditsZ : ${p.creditsZPercent}\n"} else {""} +
+            p.creditsStyle.toYamlBlock("creditsStyle", TextStyleConfig.CREDITS_DEFAULT) +
+            if (p.creditsPlacement != CreditsPlacement.END_SLIDE) {"creditsPlacement : \"${p.creditsPlacement.name}\"\n"} else {""} +
             if (p.photos.isNotEmpty()) {"photos :\n"} else {""}
     val items = p.photos.map {"- filename : \"${it.filename}\"\n" + // WARNING 1+ space after ":" is important
             "  comment : \"${it.comment}\"\n" +

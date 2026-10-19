@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,14 +38,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import javax.imageio.ImageIO
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import fr.camera3d.camera.common.ui_components.ScreenWith3dotMenuAndSnackbar
 import fr.camera3d.camera.common.ui_components.SwitchParameterComposable
+import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
+import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
+import fr.camera3d.camera.feature_playlists.ui.ComposableEditCredits
+import fr.camera3d.camera.feature_playlists.ui.ComposableEditCreditsPlacement
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditDefaultDuration
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditDefaultDurationDialog
 import fr.camera3d.camera.feature_playlists.ui.ComposableEditName
@@ -57,16 +74,18 @@ import fr.camera3d.camera.feature_playlists.ui.ComposablePlaylistMenu
 import fr.camera3d.camera.feature_playlists.ui.PlaylistScreenStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleEditorStrings
 import fr.camera3d.camera.feature_playlists.ui.TextStyleTarget
+import fr.camera3d.camera.feature_playlists.ui.creditsSpeedPercent
+import fr.camera3d.camera.feature_playlists.ui.fullscreenScrollDurationMs
 import fr.camera3d.camera.feature_playlists.ui.formatScrollSpeedLimitPercent
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-// Number of header items (name+style row/subtitle+style row/soundtrack/automated-switch/duration/scroll speed limit) placed
-// before the photo items in the LazyColumn - kept in sync with PlaylistFragment.kt's Android
-// counterpart so the drag-to-reorder index math (from/to - PLAYLIST_HEADER_ITEM_COUNT) matches.
-private const val PLAYLIST_HEADER_ITEM_COUNT = 6
+// Number of header items (name+style row/subtitle+style row/credits+style row/credits placement/soundtrack/
+// automated-switch/duration/scroll speed limit) placed before the photo items in the LazyColumn - kept in sync
+// with PlaylistFragment.kt's Android counterpart so the drag-to-reorder index math (from/to - PLAYLIST_HEADER_ITEM_COUNT) matches.
+private const val PLAYLIST_HEADER_ITEM_COUNT = 8
 
 /**
  * Playlist editor screen: same fields/behavior as CameraSync3D's PlaylistFragment, built from the
@@ -93,6 +112,10 @@ fun PlaylistScreen(
     onModifySubtitleZPercent: (Float) -> Boolean,
     onModifyTitleStyle: (TextStyleConfig) -> Boolean,
     onModifySubtitleStyle: (TextStyleConfig) -> Boolean,
+    onModifyCredits: (String) -> Boolean,
+    onModifyCreditsZPercent: (Float) -> Boolean,
+    onModifyCreditsStyle: (TextStyleConfig) -> Boolean,
+    onModifyCreditsPlacement: (CreditsPlacement) -> Boolean,
     onReorderPhotos: (List<PlaylistItem>) -> Unit,
     onDelete: () -> Boolean,
     onOpenPlaylistItem: (Int) -> Unit,
@@ -120,6 +143,13 @@ fun PlaylistScreen(
         editSubtitle = stringResource(Res.string.playlist_edit_subtitle_dialog_title),
         titleZ = stringResource(Res.string.playlist_title_z_documentation),
         subtitleZ = stringResource(Res.string.playlist_subtitle_z_documentation),
+        credits = stringResource(Res.string.playlist_credits_label),
+        pressHereToSetCredits = stringResource(Res.string.playlist_credits_placeholder),
+        editCredits = stringResource(Res.string.playlist_edit_credits_dialog_title),
+        creditsZ = stringResource(Res.string.playlist_credits_z_documentation),
+        creditsPlacement = stringResource(Res.string.playlist_credits_placement),
+        creditsPlacementEndSlide = stringResource(Res.string.playlist_credits_placement_end_slide),
+        creditsPlacementLastImage = stringResource(Res.string.playlist_credits_placement_last_image),
         automatedSlideshow = stringResource(Res.string.playlist_automated_slideshow),
         defaultDuration = stringResource(Res.string.playlist_default_duration_label),
         modifySlideshowDefaultDurationBetweenImages = stringResource(Res.string.playlist_modify_default_duration_dialog_title),
@@ -152,6 +182,7 @@ fun PlaylistScreen(
         topPercent = stringResource(Res.string.playlist_text_style_top_percent),
         leftPercent = stringResource(Res.string.playlist_text_style_left_percent),
         rightPercent = stringResource(Res.string.playlist_text_style_right_percent),
+        bottomPercent = stringResource(Res.string.playlist_text_style_bottom_percent),
         fontFamilyDefault = stringResource(Res.string.playlist_text_style_font_family_default),
         fontFamilySerif = stringResource(Res.string.playlist_text_style_font_family_serif),
         fontFamilySansSerif = stringResource(Res.string.playlist_text_style_font_family_sans_serif),
@@ -307,6 +338,51 @@ fun PlaylistScreen(
                         }
                     }
                     item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                ComposableEditCredits(playlist.credits, onModifyCredits = { credits ->
+                                    Analytics.logEvent("playlist_credits_saved", mapOf("has_credits" to credits.isNotBlank().toString()))
+                                    onModifyCredits(credits)
+                                }, strings = strings)
+                            }
+                            ComposableEditTextStyleIcon(
+                                label = stringResource(Res.string.playlist_credits_style_label),
+                                titleText = playlist.name,
+                                titleStyle = playlist.titleStyle,
+                                subtitleText = playlist.subtitle,
+                                subtitleStyle = playlist.subtitleStyle,
+                                editingTarget = TextStyleTarget.CREDITS,
+                                zPercent = playlist.creditsZPercent,
+                                zDocumentation = strings.creditsZ,
+                                strings = textStyleEditorStrings,
+                                onSave = { style ->
+                                    Analytics.logEvent("text_style_saved", mapOf("target" to "credits"))
+                                    onModifyCreditsStyle(style)
+                                },
+                                onSaveZPercent = onModifyCreditsZPercent,
+                                creditsText = playlist.credits,
+                                creditsStyle = playlist.creditsStyle,
+                                creditsSpeedPercent = playlist.creditsSpeedPercent(),
+                                previewBackground = {
+                                    // credits rolling over the last image: preview them over it instead of black
+                                    val lastPhoto = playlist.photos.lastOrNull()
+                                    if (lastPhoto != null && !lastPhoto.isVideo && playlist.creditsPlacement == CreditsPlacement.LAST_IMAGE) {
+                                        LastImagePreviewBackground(File(playlist.absolutePath, lastPhoto.filename), lastPhoto,
+                                            filled = playlist.fullscreenScrollDurationMs(lastPhoto) != null)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    item {
+                        Box(Modifier.padding(start = 16.dp)) {
+                            ComposableEditCreditsPlacement(playlist.creditsPlacement, enabled = playlist.credits.isNotBlank(), onModifyPlacement = { placement ->
+                                Analytics.logEvent("playlist_credits_placement_saved", mapOf("placement" to placement.name))
+                                onModifyCreditsPlacement(placement)
+                            }, strings = strings)
+                        }
+                    }
+                    item {
                         ComposableSoundtrackEditor(playlist.soundtrack, onRemoveSoundtrackItem)
                     }
                     item {
@@ -437,5 +513,45 @@ private fun ComposableSoundtrackEditor(soundtrack: List<String>, onRemove: (Int)
                 }
             }
         }
+    }
+}
+
+/**
+ * Background of the credits style preview when they roll over the last image: the left eye of that photo, as shown
+ * when the credits start rolling: fitted in the slide or, [filled] for a "force fullscreen by scrolling" photo,
+ * filling it at the end position of its scrolling - desktop counterpart of PlaylistFragment's
+ * ComposableLastImagePreviewBackground (photos only: a video's last frame isn't extracted here).
+ */
+@Composable
+private fun LastImagePreviewBackground(file: File, photo: PlaylistItem, filled: Boolean) {
+    var leftImage by remember(file) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file) {
+        leftImage = withContext(Dispatchers.IO) {
+            runCatching {
+                val sbs = (if (Mpo.isMpoFile(file)) Mpo.decodeComposedImage(file) else ImageIO.read(file)) ?: return@runCatching null
+                sbs.getSubimage(0, 0, sbs.width / 2, sbs.height).toComposeImageBitmap()
+            }.getOrNull()
+        }
+    }
+    val image = leftImage ?: return
+    Canvas(Modifier.fillMaxSize()) {
+        // in real aspect: a half-width SBS photo has squeezed halves
+        val imageWidth = image.width * (if (photo.isHalfWidth) 2f else 1f)
+        val imageHeight = image.height.toFloat()
+        val scale = if (filled) max(size.width / imageWidth, size.height / imageHeight) else min(size.width / imageWidth, size.height / imageHeight)
+        val drawnWidth = imageWidth * scale
+        val drawnHeight = imageHeight * scale
+        // end position of the scrolling, see FullscreenScrollStereoImage; centered otherwise
+        val shift = when {
+            !filled -> 0.5f
+            photo.fullscreenScroll == FullscreenScroll.DOWN_RIGHT -> 1f
+            else -> 0f
+        }
+        drawImage(
+            image,
+            dstOffset = IntOffset(((size.width - drawnWidth) * shift).roundToInt(), ((size.height - drawnHeight) * shift).roundToInt()),
+            dstSize = IntSize(drawnWidth.roundToInt(), drawnHeight.roundToInt()),
+            filterQuality = FilterQuality.High,
+        )
     }
 }

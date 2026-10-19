@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.ui.ComposablePortableEndSlide
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
@@ -38,11 +39,17 @@ private const val EndLabelHeightFraction = 0.2f
  * Space/Right replays from the title slide, Escape exits (see Main.kt). Under [shrinkControls]
  * (AppViewModel.shrinkControls) the label and icons are squeezed horizontally by 2 per eye-half,
  * like the title slide (see [SqueezedPerEyeHalf]).
+ * While [creditsPlaylist] is set (credits placed on the end slide, see AppViewModel.isCreditsRolling), its
+ * credits roll on black first; the "the end" animation starts once [onCreditsEnded] cleared it.
  */
 @Composable
-fun PlaylistEndScreen(shrinkControls: Boolean = false) {
+fun PlaylistEndScreen(shrinkControls: Boolean = false, creditsPlaylist: Playlist? = null, onCreditsEnded: () -> Unit = {}) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Stereo3DCursorHost(shrinkControls = shrinkControls) {
+            if (creditsPlaylist != null) {
+                PlaylistCreditsRoll(creditsPlaylist, shrinkControls, onCreditsEnded)
+                return@Stereo3DCursorHost
+            }
             SqueezedPerEyeHalf(active = shrinkControls) {
                 ComposablePortableEndSlide(
                     endLabel = stringResource(Res.string.playlist_end_label),

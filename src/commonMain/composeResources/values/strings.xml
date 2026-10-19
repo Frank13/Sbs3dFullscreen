@@ -41,6 +41,15 @@
     <string name="playlist_edit_subtitle_z_dialog_title">Edit subtitle depth effect</string>
     <string name="playlist_title_style_label">Title style</string>
     <string name="playlist_subtitle_style_label">Subtitle style</string>
+    <string name="playlist_credits_label">Credits</string>
+    <string name="playlist_credits_placeholder">Press here to set credits</string>
+    <string name="playlist_edit_credits_dialog_title">Edit credits (one line per credit)</string>
+    <string name="playlist_credits_z_documentation">Credits depth shift in % of screen width: positive values push the credits farther behind the screen, negative values bring them out toward the viewer. Typical value between -3% and 3%. The credits roll in their box at the playlist maximum scroll speed</string>
+    <string name="playlist_credits_placement">Credits roll on</string>
+    <string name="playlist_credits_placement_end_slide">End slide</string>
+    <string name="playlist_credits_placement_last_image">Last image</string>
+    <string name="playlist_credits_style_label">Credits style</string>
+    <string name="playlist_text_style_bottom_percent">Bottom (%)</string>
     <string name="playlist_text_style_preview">Preview</string>
     <string name="playlist_text_style_font_options_section">Font options</string>
     <string name="playlist_text_style_font_size">Font size</string>

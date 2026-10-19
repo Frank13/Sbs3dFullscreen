@@ -70,6 +70,7 @@ $filesToSync = @(
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\PortableFullscreenScroll.kt"; SourceSet = "commonMain" }
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\StyledPositionedText.kt"; SourceSet = "commonMain" }
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\ComposableTextStyleEditor.kt"; SourceSet = "commonMain" }
+    @{ Path = "fr\camera3d\camera\feature_playlists\ui\PortableCreditsRoll.kt"; SourceSet = "commonMain" }
 )
 
 # Vector drawables backing the Exif3d info panel's icons (3D characteristic glyph, legend bubbles).

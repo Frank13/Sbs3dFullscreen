@@ -5,6 +5,7 @@ package fr.camera3d.camera.feature_playlists.domain
 
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.PlaylistToYAML
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.getYamlPlaylistFromYaml
+import fr.camera3d.camera.feature_playlists.service.yamlImporter.toCreditsPlacement
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.toFullscreenScroll
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.toTextStyleConfig
 import java.io.File
@@ -18,6 +19,12 @@ const val PLAYLIST_INDEX_FILENAME = "playlistIndex.yaml"
 fun isVideoFilename(filename: String): Boolean = filename.endsWith(".mp4", ignoreCase = true)
 
 enum class PlaylistType {EXTERNAL_STORAGE, SAF_TREE_URI_ON_PLAYLISTS, SAF_TREE_URI_ON_SUBFOLDER}
+
+/**
+ * Where the playlist credits roll: on the end slide (before its "the end" animation) or over the last
+ * image (after its normal duration/animation, the credits roll duration being added to it)
+ */
+enum class CreditsPlacement {END_SLIDE, LAST_IMAGE}
 
 data class Playlist(
     //val index: Int, // index in the list of playlists
@@ -35,8 +42,18 @@ data class Playlist(
     val isAutomated : Boolean = true, // true: slideshow auto-advances after defaultDurationS; false: user advances slides manually
     val scrollSpeedLimitPercent : Float = 5f, // max scrolling speed of "force fullscreen by scrolling" photos, in % of the screen per second (<= 0: no limit); extends their slide duration if needed
     val soundtrack : List<String> = listOf(), // mp3 filenames (in the playlist folder) played one after the other during the slideshow
+    val credits : String = "", // multi-line credits rolling from the bottom to the top of their bounding box, "" for no credits
+    val creditsZPercent : Float = 0f, // depth shift (stereo "altitude") of the credits
+    val creditsStyle : TextStyleConfig = TextStyleConfig.CREDITS_DEFAULT, // font/color/bounding box (top/left/right/bottom) of the credits
+    val creditsPlacement : CreditsPlacement = CreditsPlacement.END_SLIDE,
     var photos : List<PlaylistItem> = listOf() // list of playlists
 ){
+
+    /** true if credits roll on the end slide, before its "the end" animation */
+    fun hasCreditsOnEndSlide(): Boolean = credits.isNotBlank() && (creditsPlacement == CreditsPlacement.END_SLIDE || photos.isEmpty())
+
+    /** true if credits roll over the last image, after its normal duration/animation */
+    fun hasCreditsOnLastImage(): Boolean = credits.isNotBlank() && creditsPlacement == CreditsPlacement.LAST_IMAGE && photos.isNotEmpty()
 
     fun toYAML() : String{
         return PlaylistToYAML(this)
@@ -133,7 +150,10 @@ data class Playlist(
             return Playlist(p.name, type, absoluteFolder, p.defaultDuration, p.defaultTransition, p.soundFilename, p.subtitle, p.titleZ, p.subtitleZ,
                 titleStyle = p.titleStyle.toTextStyleConfig(TextStyleConfig.TITLE_DEFAULT),
                 subtitleStyle = p.subtitleStyle.toTextStyleConfig(TextStyleConfig.SUBTITLE_DEFAULT),
-                isAutomated = p.isAutomated, scrollSpeedLimitPercent = p.scrollSpeedLimitPercent, soundtrack = p.soundtrack, photos = items)
+                isAutomated = p.isAutomated, scrollSpeedLimitPercent = p.scrollSpeedLimitPercent, soundtrack = p.soundtrack,
+                credits = p.credits, creditsZPercent = p.creditsZ,
+                creditsStyle = p.creditsStyle.toTextStyleConfig(TextStyleConfig.CREDITS_DEFAULT),
+                creditsPlacement = p.creditsPlacement.toCreditsPlacement(), photos = items)
         }
 
         /**

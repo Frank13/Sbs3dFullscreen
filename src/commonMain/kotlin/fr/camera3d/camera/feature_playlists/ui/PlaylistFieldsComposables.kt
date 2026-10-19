@@ -9,6 +9,7 @@ package fr.camera3d.camera.feature_playlists.ui
 // resource dependency. Sync via tools/sync-from-android.ps1.
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -32,10 +34,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import fr.camera3d.camera.common.ui_components.EditParameterComposable
 import fr.camera3d.camera.common.ui_components.PortableOkCancelDialog
 import fr.camera3d.camera.common.ui_components.PortableParameterComposable
 import fr.camera3d.camera.common.ui_components.snackbar
+import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -100,6 +104,68 @@ fun ComposableEditSubtitle(subtitle: String, onModifySubtitle: (String) -> Boole
         cancelLabel = strings.cancel,
         onDialogSave = { newSubtitle -> onModifySubtitle(newSubtitle) },
     )
+}
+
+/**
+ * Displays the playlist credits (first line only) and enables editing them as a multi-line text.
+ */
+@Composable
+fun ComposableEditCredits(credits: String, onModifyCredits: (String) -> Boolean, strings: PlaylistScreenStrings) {
+    var openDialog by remember { mutableStateOf(false) }
+    var textFieldValue by remember { mutableStateOf(credits) }
+    val lines = credits.lines()
+    PortableParameterComposable(
+        parameterName = strings.credits,
+        parameterValue = if (credits.isBlank()) "" else lines.first() + if (lines.size > 1) " …" else "",
+        defaultValue = strings.pressHereToSetCredits,
+        onClick = {
+            textFieldValue = credits
+            openDialog = true
+        },
+    )
+    if (openDialog) {
+        PortableOkCancelDialog(
+            dialogTitle = strings.editCredits,
+            dialogOkLabel = strings.saveButton,
+            dialogCancelLabel = strings.cancel,
+            content = {
+                TextField(
+                    value = textFieldValue,
+                    onValueChange = { textFieldValue = it },
+                    minLines = 6,
+                )
+            },
+            onDismissRequestCb = { openDialog = false },
+            okCallback = {
+                // only the trailing blank lines are removed: leading ones delay the credits on purpose
+                val newCredits = textFieldValue.trimEnd()
+                if (newCredits == credits || onModifyCredits(newCredits)) openDialog = false
+            },
+        )
+    }
+}
+
+/** Choice between rolling the credits on the end slide or over the last image */
+@Composable
+fun ComposableEditCreditsPlacement(placement: CreditsPlacement, enabled: Boolean, onModifyPlacement: (CreditsPlacement) -> Boolean, strings: PlaylistScreenStrings) {
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.4f)) {
+        Text(strings.creditsPlacement, style = MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onBackground))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CreditsPlacement.entries.forEach { p ->
+                FilterChip(
+                    selected = placement == p,
+                    enabled = enabled,
+                    onClick = { if (placement != p) onModifyPlacement(p) },
+                    label = {
+                        Text(when (p) {
+                            CreditsPlacement.END_SLIDE -> strings.creditsPlacementEndSlide
+                            CreditsPlacement.LAST_IMAGE -> strings.creditsPlacementLastImage
+                        })
+                    },
+                )
+            }
+        }
+    }
 }
 
 /**

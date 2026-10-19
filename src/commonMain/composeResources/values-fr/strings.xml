@@ -41,6 +41,15 @@
     <string name="playlist_edit_subtitle_z_dialog_title">Modifier l'effet de profondeur du sous-titre</string>
     <string name="playlist_title_style_label">Style du titre</string>
     <string name="playlist_subtitle_style_label">Style du sous-titre</string>
+    <string name="playlist_credits_label">Générique</string>
+    <string name="playlist_credits_placeholder">Appuyez ici pour définir un générique</string>
+    <string name="playlist_edit_credits_dialog_title">Modifier le générique (une ligne par crédit)</string>
+    <string name="playlist_credits_z_documentation">Décalage de profondeur du générique en % de la largeur de l'écran : une valeur positive éloigne le générique derrière l'écran, une valeur négative le fait ressortir vers le spectateur. Valeur typique entre -3% et 3%. Le générique défile dans son cadre à la vitesse de défilement maximale de la playlist</string>
+    <string name="playlist_credits_placement">Générique sur</string>
+    <string name="playlist_credits_placement_end_slide">Diapo de fin</string>
+    <string name="playlist_credits_placement_last_image">Dernière image</string>
+    <string name="playlist_credits_style_label">Style du générique</string>
+    <string name="playlist_text_style_bottom_percent">Bas (%)</string>
     <string name="playlist_text_style_preview">Aperçu</string>
     <string name="playlist_text_style_font_options_section">Options de police</string>
     <string name="playlist_text_style_font_size">Taille de police</string>

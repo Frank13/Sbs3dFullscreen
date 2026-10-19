@@ -1,6 +1,7 @@
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
 import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
@@ -220,6 +221,14 @@ class AppViewModel(initialFile: File?) {
             }
         }
 
+    // Index of the slide the playlist credits roll on (the last photo, or the end slide = imageFiles.size),
+    // see isCreditsRolling - mirrors CameraSync3D's SlideshowViewModel.isCreditsRolling.
+    private var creditsSlideIndex by mutableStateOf<Int?>(null)
+
+    /** True while the playlist credits roll, over the last photo or on the end slide (see Playlist.creditsPlacement). */
+    val isCreditsRolling: Boolean
+        get() = playingPlaylist != null && creditsSlideIndex == currentImageIndex
+
     fun onLanguageChosen(languageTag: String?) {
         language = languageTag
     }
@@ -436,6 +445,7 @@ class AppViewModel(initialFile: File?) {
         playingPlaylist = playlist
         imageFiles = files
         currentImageIndex = -1 // start on the title slide
+        creditsSlideIndex = null
         isAutomatedPlaylist = isAutomated
         slideshowIntervalMs = intervalMs
         photoTools.resetAll()
@@ -878,6 +888,14 @@ class AppViewModel(initialFile: File?) {
 
     fun modifySubtitleStyle(newValue: TextStyleConfig): Boolean = playlistEditor.modifySubtitleStyle(newValue)
 
+    fun modifyCredits(newValue: String): Boolean = playlistEditor.modifyCredits(newValue)
+
+    fun modifyCreditsZPercent(newValue: Float): Boolean = playlistEditor.modifyCreditsZPercent(newValue)
+
+    fun modifyCreditsStyle(newValue: TextStyleConfig): Boolean = playlistEditor.modifyCreditsStyle(newValue)
+
+    fun modifyCreditsPlacement(newValue: CreditsPlacement): Boolean = playlistEditor.modifyCreditsPlacement(newValue)
+
     /** Applies a fully-reordered photo list (e.g. after drag-and-drop) and saves to disk. */
     fun applyPhotosReorder(newPhotos: List<PlaylistItem>) {
         playlistEditor.applyPhotosReorder(newPhotos)
@@ -1005,6 +1023,11 @@ class AppViewModel(initialFile: File?) {
     }
 
     private fun navigateNext() {
+        // Space/Right while the credits roll skips them (like a tap on CameraSync3D)
+        if (isCreditsRolling) {
+            onCreditsEnded()
+            return
+        }
         val upperBound = if (playingPlaylist != null) imageFiles.size else imageFiles.lastIndex
         if (currentImageIndex >= upperBound) {
             if (playingPlaylist != null && currentImageIndex == imageFiles.size) {
@@ -1022,7 +1045,9 @@ class AppViewModel(initialFile: File?) {
             // stay browsable at the end of a list.
             if (nextIndex < imageFiles.size && imageFiles[nextIndex] !in visible) return
         }
+        if (startLastImageCredits(nextIndex)) return
         currentImageIndex = nextIndex
+        startEndSlideCreditsIfPlaced()
         photoTools.resetAll()
         trackPlaylistPhotoViewedIfApplicable()
     }
@@ -1037,6 +1062,7 @@ class AppViewModel(initialFile: File?) {
             if (previousIndex >= 0 && imageFiles[previousIndex] !in visible) return
         }
         currentImageIndex = previousIndex
+        creditsSlideIndex = null
         photoTools.resetAll()
         trackPlaylistPhotoViewedIfApplicable()
     }
@@ -1080,8 +1106,43 @@ class AppViewModel(initialFile: File?) {
             val visible = visiblePhotos(imageFiles)
             while (nextIndex < imageFiles.size && imageFiles[nextIndex] !in visible) nextIndex++
         }
+        // on the last photo, the credits roll before going to the end slide; onCreditsEnded() moves on
+        if (isCreditsRolling || startLastImageCredits(nextIndex)) return
         currentImageIndex = nextIndex
+        startEndSlideCreditsIfPlaced()
         photoTools.resetAll()
         trackPlaylistPhotoViewedIfApplicable()
+    }
+
+    /**
+     * Starts rolling the credits over the current photo instead of moving on to [nextIndex], if that's the end
+     * slide and the credits are placed over the last image.
+     * @return true if the credits started rolling
+     */
+    private fun startLastImageCredits(nextIndex: Int): Boolean {
+        val playlist = playingPlaylist ?: return false
+        if (nextIndex < imageFiles.size || playlistSlideKind != PlaylistSlideKind.PHOTO || !playlist.hasCreditsOnLastImage()) return false
+        creditsSlideIndex = currentImageIndex
+        return true
+    }
+
+    /** Called once a slide is reached going forward: on the end slide, its credits (if placed there) roll before its "the end" animation. */
+    private fun startEndSlideCreditsIfPlaced() {
+        creditsSlideIndex = currentImageIndex.takeIf {
+            playlistSlideKind == PlaylistSlideKind.END && playingPlaylist?.hasCreditsOnEndSlide() == true
+        }
+    }
+
+    /**
+     * Called once the credits have completely rolled, or are skipped: over the last photo, moves on to the end
+     * slide; on the end slide, lets its "the end" animation (and the soundtrack fade-out) start.
+     */
+    fun onCreditsEnded() {
+        if (!isCreditsRolling) return
+        creditsSlideIndex = null
+        if (playlistSlideKind == PlaylistSlideKind.PHOTO) {
+            currentImageIndex = imageFiles.size
+            photoTools.resetAll()
+        }
     }
 }
