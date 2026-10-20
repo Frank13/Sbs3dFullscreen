@@ -47,13 +47,20 @@
         Square44x44Logo="Assets\Square44x44Logo.png">
       </uap:VisualElements>
       <Extensions>
-        <!-- Mirrors the jpg/jpeg fileAssociation(...) entries in build.gradle.kts's MSI/EXE
+        <!-- Mirrors the jpg/jpeg/mpo fileAssociation(...) entries in build.gradle.kts's MSI/EXE
              installer config, so the Store-installed MSIX also opens on double-click. -->
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="sbs3dfullscreenjpeg">
             <uap:SupportedFileTypes>
               <uap:FileType>.jpg</uap:FileType>
               <uap:FileType>.jpeg</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="sbs3dviewermpo">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.mpo</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>

@@ -197,6 +197,7 @@
     <string name="vlc_missing_download">Télécharger VLC</string>
     <string name="vlc_missing_dismiss">Fermer</string>
     <string name="opening_fullscreen_message">Ouverture du plein écran…</string>
+    <string name="copying_files_message">Copie des fichiers…</string>
     <string name="about_link_label">À propos de SBS 3D Viewer</string>
     <string name="about_screen_title">À propos</string>
     <string name="about_purpose_text">SBS 3D Viewer est une visionneuse de photos et de vidéos 3D pour moniteurs et projecteurs 3D stéréoscopiques.\n\nFonctionnalités principales :\n - affichage des photos JPEG côte à côte (SBS), en pleine ou demi-largeur, et des photos MPO,\n - lecture des vidéos côte à côte en demi-largeur,\n - alignement automatique et manuel,\n - rognage,\n - détection des problèmes stéréo,\n - enrichissement des données EXIF</string>

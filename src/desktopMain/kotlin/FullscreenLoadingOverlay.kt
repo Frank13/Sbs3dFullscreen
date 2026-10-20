@@ -1,4 +1,6 @@
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -18,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.copying_files_message
 import sbs3dViewer.resources.opening_fullscreen_message
 
 /**
@@ -32,6 +36,29 @@ fun FullscreenLoadingOverlay() {
     Row(Modifier.fillMaxSize().background(Color.Black)) {
         Box(Modifier.fillMaxSize().weight(1f)) { FullscreenLoadingHalf() }
         Box(Modifier.fillMaxSize().weight(1f)) { FullscreenLoadingHalf() }
+    }
+}
+
+/**
+ * Shown over the (non-fullscreen) playlist screens while PlaylistEditorState copies files in the
+ * background (see its isCopying). A plain 2D window here, so a single centered spinner - unlike
+ * [FullscreenLoadingOverlay]'s per-half copies. Swallows clicks so the playlist being copied into
+ * can't be closed or edited until the copy finishes.
+ */
+@Composable
+fun CopyingFilesOverlay() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = Color.White)
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(Res.string.copying_files_message), color = Color.White, fontSize = 18.sp)
+        }
     }
 }
 

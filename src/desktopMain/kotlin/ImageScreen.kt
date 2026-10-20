@@ -170,29 +170,7 @@ fun ImageScreen(
     onConfirmSaveAlignedAndNavigate: () -> Unit = {},
     onDiscardAlignedPreviewAndNavigate: () -> Unit = {},
     onCancelPendingNavigation: () -> Unit = {},
-    onAutoAlign: () -> Unit = {},
-    onCorrectZoom: () -> Unit = {},
-    onSaveAligned: () -> Unit = {},
-    onCancelAligned: () -> Unit = {},
-    onStartManualAlign: () -> Unit = {},
-    onCancelManualAlign: () -> Unit = {},
-    onSaveManualAlign: () -> Unit = {},
-    onStartCrop: () -> Unit = {},
-    onCropRectFinalized: (CropRectFraction) -> Unit = {},
-    onCancelCrop: () -> Unit = {},
-    onSaveCrop: () -> Unit = {},
-    onStartSpotIssues: () -> Unit = {},
-    onSpotIssueRectAdded: (IssueRectFraction) -> Unit = {},
-    onCancelSpotIssues: () -> Unit = {},
-    onSaveSpotIssues: () -> Unit = {},
-    onStartClickAlign: () -> Unit = {},
-    onClickAlignPointSet: (isLeft: Boolean, PointFraction) -> Unit = { _, _ -> },
-    onCancelClickAlign: () -> Unit = {},
-    onSaveClickAlign: () -> Unit = {},
-    onRequestClickAlignPreview: () -> Unit = {},
-    onDeleteCurrentImage: () -> Unit = {},
-    onDeleteKeepingLeft: () -> Unit = {},
-    onDeleteKeepingRight: () -> Unit = {},
+    photoToolActions: PhotoToolActions = PhotoToolActions(),
     onKeepBestOfEachOnlyChosen: (Boolean) -> Unit = {},
     onFavoritesOnlyChosen: (Boolean) -> Unit = {},
     onExcludeStereoIssuesChosen: (Boolean) -> Unit = {},
@@ -334,7 +312,7 @@ fun ImageScreen(
     // either point moves) is preferable to a blank frame while it's recomputed for no reason.
     LaunchedEffect(clickAlignPreviewActive, clickAlignLeftPoint, clickAlignRightPoint) {
         if (clickAlignPreviewActive && clickAlignLeftPoint != null && clickAlignRightPoint != null) {
-            onRequestClickAlignPreview()
+            photoToolActions.onRequestClickAlignPreview()
         }
     }
 
@@ -359,12 +337,12 @@ fun ImageScreen(
                         val isLeftSub = halfLocal.x < subBoxWidthPx
                         val localX = if (isLeftSub) halfLocal.x else halfLocal.x - subBoxWidthPx
                         val point = pixelToImageFraction(Offset(localX, halfLocal.y), subBoxWidthPx, boxHeightPx, halfWidthSrc, bitmap.height, halveLeftRightImages)
-                        onClickAlignPointSet(isLeftSub, point)
+                        photoToolActions.onClickAlignPointSet(isLeftSub, point)
                     } else {
                         // Default layout: each physical half already shows one whole eye's photo
                         // (see StereoImage's doc), so isRightHalf alone says which eye was clicked.
                         val point = pixelToImageFraction(halfLocal, halfWidthPx, boxHeightPx, halfWidthSrc, bitmap.height, false)
-                        onClickAlignPointSet(!isRightHalf, point)
+                        photoToolActions.onClickAlignPointSet(!isRightHalf, point)
                     }
                 }
             },
@@ -379,9 +357,10 @@ fun ImageScreen(
             // list: scrolling backward/down (positive delta) advances to the next image, scrolling
             // forward/up (negative delta) goes back. Disabled while a photo tool is active or a
             // dialog is open, matching Main.kt's arrow-key handling, which repurposes/swallows
-            // navigation during those modes.
+            // navigation during those modes (navigating would otherwise discard the pending edit,
+            // e.g. click align's placed points).
             onScroll = { delta ->
-                if (!manualAlignMode && !cropMode && !spotIssuesMode && !anyDialogShown) {
+                if (!manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !anyDialogShown) {
                     if (delta > 0) onNextImage() else if (delta < 0) onPreviousImage()
                 }
             },
@@ -400,9 +379,9 @@ fun ImageScreen(
                     val frac = computeDragFraction(bitmap, halveLeftRightImages, halfWidthPx, boxHeightPx, start, end)
                     if (frac != null) {
                         if (spotIssuesMode) {
-                            onSpotIssueRectAdded(IssueRectFraction(frac[0], frac[1], frac[2], frac[3]))
+                            photoToolActions.onSpotIssueRectAdded(IssueRectFraction(frac[0], frac[1], frac[2], frac[3]))
                         } else {
-                            onCropRectFinalized(CropRectFraction(frac[0], frac[1], frac[2], frac[3]))
+                            photoToolActions.onCropRectFinalized(CropRectFraction(frac[0], frac[1], frac[2], frac[3]))
                         }
                     }
                 }
@@ -484,35 +463,19 @@ fun ImageScreen(
                         shrinkControls = shrinkControls,
                         onDialogOpenChanged = { infoPanelDialogOpen = it },
                         onExifUpdated = { exifUpdateToken++ },
-                        hasAlignedPreview = hasAlignedPreview,
-                        isAligning = isAligning,
-                        manualAlignMode = manualAlignMode,
-                        hasManualOffset = manualAlignOffsetX != 0f || manualAlignOffsetY != 0f,
-                        cropMode = cropMode,
-                        hasCropRect = cropRect != null,
-                        spotIssuesMode = spotIssuesMode,
-                        hasSpotIssueRects = spotIssueRects.isNotEmpty(),
-                        clickAlignMode = clickAlignMode,
-                        hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
-                        onAutoAlign = onAutoAlign,
-                        onCorrectZoom = onCorrectZoom,
-                        onSaveAligned = onSaveAligned,
-                        onCancelAligned = onCancelAligned,
-                        onStartManualAlign = onStartManualAlign,
-                        onCancelManualAlign = onCancelManualAlign,
-                        onSaveManualAlign = onSaveManualAlign,
-                        onStartCrop = onStartCrop,
-                        onCancelCrop = onCancelCrop,
-                        onSaveCrop = onSaveCrop,
-                        onStartSpotIssues = onStartSpotIssues,
-                        onCancelSpotIssues = onCancelSpotIssues,
-                        onSaveSpotIssues = onSaveSpotIssues,
-                        onStartClickAlign = onStartClickAlign,
-                        onCancelClickAlign = onCancelClickAlign,
-                        onSaveClickAlign = onSaveClickAlign,
-                        onDeleteCurrentImage = onDeleteCurrentImage,
-                        onDeleteKeepingLeft = onDeleteKeepingLeft,
-                        onDeleteKeepingRight = onDeleteKeepingRight,
+                        tools = PhotoToolsUiState(
+                            hasAlignedPreview = hasAlignedPreview,
+                            isAligning = isAligning,
+                            manualAlignMode = manualAlignMode,
+                            hasManualOffset = manualAlignOffsetX != 0f || manualAlignOffsetY != 0f,
+                            cropMode = cropMode,
+                            hasCropRect = cropRect != null,
+                            spotIssuesMode = spotIssuesMode,
+                            hasSpotIssueRects = spotIssueRects.isNotEmpty(),
+                            clickAlignMode = clickAlignMode,
+                            hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
+                        ),
+                        actions = photoToolActions,
                         showEditTools = showEditTools,
                     )
                 }

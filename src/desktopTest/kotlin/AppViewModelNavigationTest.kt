@@ -1,6 +1,7 @@
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
+import kotlinx.coroutines.runBlocking
 import java.awt.image.BufferedImage
 import java.io.File
 import java.util.prefs.Preferences
@@ -10,7 +11,9 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Covers AppViewModel's navigation state machine - showNextImage/showPreviousImage/
@@ -99,6 +102,46 @@ class AppViewModelNavigationTest {
         assertEquals(favorite, vm.imageFiles[vm.currentImageIndex])
         vm.showNextImage()
         assertEquals(favorite, vm.imageFiles[vm.currentImageIndex]) // nothing further to skip to
+    }
+
+    @Test
+    fun `excludeStereoIssues skips photos flagged in EXIF3D or spotted by file name`() {
+        val dir = createTempDirectory("nav-test").toFile()
+        val flagged = realJpeg(dir, "flagged.jpg")
+        Exif3d.setWarningInExif(flagged, true, "ghosting")
+        val spotted = realJpeg(dir, "photo_stereo_issues.sbs.jpg")
+        val clean = realJpeg(dir, "clean.jpg")
+        val files = listOf(flagged, spotted, clean)
+
+        val vm = AppViewModel(null)
+        vm.onFilesChosen(files)
+        vm.onExcludeStereoIssuesChosen(true)
+
+        assertEquals(clean, vm.currentImage) // snapped forward past both flagged photos
+        vm.showPreviousImage()
+        assertEquals(clean, vm.currentImage) // nothing visible before it
+    }
+
+    @Test
+    fun `edit tools and delete are refused while a playlist plays`() = runBlocking<Unit> {
+        val dir = createTempDirectory("nav-test").toFile()
+        val photoFiles = listOf(realJpeg(dir, "1.jpg"), realJpeg(dir, "2.jpg"))
+        val items = photoFiles.map { PlaylistItem(it.name, it.toURI().toString()) }
+        val playlist = Playlist(name = "Test", absolutePath = dir.absolutePath, photos = items)
+
+        val vm = AppViewModel(null)
+        vm.onPlaylistChosen(playlist, photoFiles, isAutomated = false, intervalMs = 1000)
+        vm.showNextImage() // TITLE -> first photo
+
+        vm.startCrop()
+        vm.startManualAlign()
+        vm.startSpotIssues()
+        vm.startClickAlign()
+        assertFalse(vm.photoTools.cropMode || vm.photoTools.manualAlignMode || vm.photoTools.spotIssuesMode || vm.photoTools.clickAlignMode)
+
+        vm.performDeleteCurrentImage()
+        assertTrue(photoFiles[0].exists(), "a playlist photo must not be deleted from the slideshow")
+        assertEquals(photoFiles, vm.imageFiles)
     }
 
     @Test

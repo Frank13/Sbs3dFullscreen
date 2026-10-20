@@ -18,8 +18,8 @@ plugins {
     id("org.jetbrains.compose") version "1.11.1"
 }
 
-group = "org.example"
-version = "1.0-SNAPSHOT"
+group = "fr.camera3d"
+version = project.property("appVersion") as String
 
 // Shared with the packageMsix task below, so the app-image directory name it reads from and the
 // jpackage packageName it's built from can't drift apart.
@@ -129,6 +129,11 @@ compose.desktop {
         // 24+ treats as a restricted method and warns about unless native access is granted.
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
 
+        // The JVM's default max heap is only 25% of RAM, tight for full-resolution side-by-side
+        // photos (a 24 MP-per-eye SBS is ~190 MB decoded; ImageDecodeCache keeps the current one
+        // plus its Next/Previous neighbors). Half of RAM still leaves plenty for the rest of the system.
+        jvmArgs += "-XX:MaxRAMPercentage=50"
+
         // Exposes gradle.properties' appVersion (also used below as the installer's
         // packageVersion) to the running app as a system property, so AboutScreen.kt can display
         // it without a separate BuildConfig-generation step. Applies to both `run`/`runDistributable`
@@ -188,6 +193,15 @@ compose.desktop {
                 mimeType = "image/jpeg",
                 extension = "jpeg",
                 description = "JPEG Image",
+                windowsIconFile = project.file("icons/icon.ico"),
+            )
+            // Stereo cameras' (Fujifilm W3, Nintendo 3DS...) native format, decoded in memory by
+            // Mpo.kt. Videos are deliberately not associated: a jpackage MSI association takes over
+            // the extension's default app, which would hijack the user's regular video player.
+            fileAssociation(
+                mimeType = "image/mpo",
+                extension = "mpo",
+                description = "MPO 3D Image",
                 windowsIconFile = project.file("icons/icon.ico"),
             )
         }

@@ -157,35 +157,8 @@ fun InfoPanel(
     shrinkControls: Boolean = false,
     onDialogOpenChanged: (Boolean) -> Unit = {},
     onExifUpdated: () -> Unit = {},
-    hasAlignedPreview: Boolean = false,
-    isAligning: Boolean = false,
-    manualAlignMode: Boolean = false,
-    hasManualOffset: Boolean = false,
-    cropMode: Boolean = false,
-    hasCropRect: Boolean = false,
-    spotIssuesMode: Boolean = false,
-    hasSpotIssueRects: Boolean = false,
-    clickAlignMode: Boolean = false,
-    hasClickAlignPoints: Boolean = false,
-    onAutoAlign: () -> Unit = {},
-    onCorrectZoom: () -> Unit = {},
-    onSaveAligned: () -> Unit = {},
-    onCancelAligned: () -> Unit = {},
-    onStartManualAlign: () -> Unit = {},
-    onCancelManualAlign: () -> Unit = {},
-    onSaveManualAlign: () -> Unit = {},
-    onStartCrop: () -> Unit = {},
-    onCancelCrop: () -> Unit = {},
-    onSaveCrop: () -> Unit = {},
-    onStartSpotIssues: () -> Unit = {},
-    onCancelSpotIssues: () -> Unit = {},
-    onSaveSpotIssues: () -> Unit = {},
-    onStartClickAlign: () -> Unit = {},
-    onCancelClickAlign: () -> Unit = {},
-    onSaveClickAlign: () -> Unit = {},
-    onDeleteCurrentImage: () -> Unit = {},
-    onDeleteKeepingLeft: () -> Unit = {},
-    onDeleteKeepingRight: () -> Unit = {},
+    tools: PhotoToolsUiState = PhotoToolsUiState(),
+    actions: PhotoToolActions = PhotoToolActions(),
     // False while a playlist plays: its photo list is a curated index on disk, so the align/crop/
     // spot-issues/delete tools (which insert or remove files) are hidden - see AppViewModel's
     // playingPlaylist guards.
@@ -259,8 +232,10 @@ fun InfoPanel(
     // picked, so it never reopens already-expanded next time the tool is started fresh.
     var manualAlignSubmenuExpanded by remember(file) { mutableStateOf(false) }
     val onManualAlignSubmenuToggle: () -> Unit = { manualAlignSubmenuExpanded = !manualAlignSubmenuExpanded }
-    val onStartManualAlignFromSubmenu: () -> Unit = { manualAlignSubmenuExpanded = false; onStartManualAlign() }
-    val onStartClickAlignFromSubmenu: () -> Unit = { manualAlignSubmenuExpanded = false; onStartClickAlign() }
+    val halfActions = actions.copy(
+        onStartManualAlign = { manualAlignSubmenuExpanded = false; actions.onStartManualAlign() },
+        onStartClickAlign = { manualAlignSubmenuExpanded = false; actions.onStartClickAlign() },
+    )
 
     // An unedited stereo pair (GalleryScreen.kt's rawEditedLabel == "raw") gets a 3-way delete
     // choice (keep left eye as 2D / keep right eye as 2D / delete completely) instead of a plain
@@ -296,10 +271,10 @@ fun InfoPanel(
             val shift = halfWidth * InfoPanelShiftPercent
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest, showEditTools)
+                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, halfActions, onDeleteRequest, showEditTools)
                 }
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest, showEditTools)
+                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, halfActions, onDeleteRequest, showEditTools)
                 }
             }
         }
@@ -354,7 +329,7 @@ fun InfoPanel(
             title = { Text(stringResource(Res.string.delete_confirm_dialog_title)) },
             text = { Text(stringResource(Res.string.delete_confirm_dialog_message)) },
             confirmButton = {
-                val onClick = { showDeleteConfirmDialog = false; onDeleteCurrentImage() }
+                val onClick = { showDeleteConfirmDialog = false; actions.onDeleteCurrentImage() }
                 TextButton(onClick = onClick, modifier = Modifier.cursor3DClickTarget(onClick)) {
                     Text(stringResource(Res.string.delete_button))
                 }
@@ -375,15 +350,15 @@ fun InfoPanel(
             text = { Text(stringResource(Res.string.delete_raw_dialog_message)) },
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
-                    val onKeepLeft = { showDeleteRawChoiceDialog = false; onDeleteKeepingLeft() }
+                    val onKeepLeft = { showDeleteRawChoiceDialog = false; actions.onDeleteKeepingLeft() }
                     TextButton(onClick = onKeepLeft, modifier = Modifier.cursor3DClickTarget(onKeepLeft)) {
                         Text(stringResource(Res.string.delete_keep_left_button))
                     }
-                    val onKeepRight = { showDeleteRawChoiceDialog = false; onDeleteKeepingRight() }
+                    val onKeepRight = { showDeleteRawChoiceDialog = false; actions.onDeleteKeepingRight() }
                     TextButton(onClick = onKeepRight, modifier = Modifier.cursor3DClickTarget(onKeepRight)) {
                         Text(stringResource(Res.string.delete_keep_right_button))
                     }
-                    val onDeleteAll = { showDeleteRawChoiceDialog = false; onDeleteCurrentImage() }
+                    val onDeleteAll = { showDeleteRawChoiceDialog = false; actions.onDeleteCurrentImage() }
                     TextButton(onClick = onDeleteAll, modifier = Modifier.cursor3DClickTarget(onDeleteAll)) {
                         Text(stringResource(Res.string.delete_completely_button))
                     }
@@ -534,34 +509,10 @@ private fun InfoPanelHalf(
     onToggleFavorite: () -> Unit,
     onWarningToggleRequest: (Boolean) -> Unit,
     onLegendClick: () -> Unit,
-    hasAlignedPreview: Boolean,
-    isAligning: Boolean,
-    manualAlignMode: Boolean,
-    hasManualOffset: Boolean,
-    cropMode: Boolean,
-    hasCropRect: Boolean,
-    spotIssuesMode: Boolean,
-    hasSpotIssueRects: Boolean,
-    clickAlignMode: Boolean,
-    hasClickAlignPoints: Boolean,
+    tools: PhotoToolsUiState,
     manualAlignSubmenuExpanded: Boolean,
     onManualAlignSubmenuToggle: () -> Unit,
-    onAutoAlign: () -> Unit,
-    onCorrectZoom: () -> Unit,
-    onSaveAligned: () -> Unit,
-    onCancelAligned: () -> Unit,
-    onStartManualAlign: () -> Unit,
-    onCancelManualAlign: () -> Unit,
-    onSaveManualAlign: () -> Unit,
-    onStartCrop: () -> Unit,
-    onCancelCrop: () -> Unit,
-    onSaveCrop: () -> Unit,
-    onStartSpotIssues: () -> Unit,
-    onCancelSpotIssues: () -> Unit,
-    onSaveSpotIssues: () -> Unit,
-    onStartClickAlign: () -> Unit,
-    onCancelClickAlign: () -> Unit,
-    onSaveClickAlign: () -> Unit,
+    actions: PhotoToolActions,
     onDeleteRequest: () -> Unit,
     showEditTools: Boolean,
 ) {
@@ -589,10 +540,10 @@ private fun InfoPanelHalf(
                 // focused on the rectangle/nudge/points/preview, and this row is width-constrained
                 // to half the screen (see Exif3dInfoPanel's BoxWithConstraints) so dropping it also
                 // gives AlignButtonsRow more room.
-                if (!cropMode && !manualAlignMode && !spotIssuesMode && !clickAlignMode && !hasAlignedPreview) {
+                if (!tools.anyToolActive) {
                     InfoPanelContent(summary, onToggleFavorite, onWarningToggleRequest, onLegendClick)
                 }
-                if (showEditTools) AlignButtonsRow(shrinkControls, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlign, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlign, onCancelClickAlign, onSaveClickAlign, onDeleteRequest)
+                if (showEditTools) AlignButtonsRow(shrinkControls, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, actions, onDeleteRequest)
                 ShadowedText(file.name, modifier = Modifier.padding(top = 8.dp))
             }
         }
@@ -602,36 +553,14 @@ private fun InfoPanelHalf(
 @Composable
 private fun AlignButtonsRow(
     shrinkControls: Boolean,
-    hasAlignedPreview: Boolean,
-    isAligning: Boolean,
-    manualAlignMode: Boolean,
-    hasManualOffset: Boolean,
-    cropMode: Boolean,
-    hasCropRect: Boolean,
-    spotIssuesMode: Boolean,
-    hasSpotIssueRects: Boolean,
-    clickAlignMode: Boolean,
-    hasClickAlignPoints: Boolean,
+    tools: PhotoToolsUiState,
     manualAlignSubmenuExpanded: Boolean,
     onManualAlignSubmenuToggle: () -> Unit,
-    onAutoAlign: () -> Unit,
-    onCorrectZoom: () -> Unit,
-    onSaveAligned: () -> Unit,
-    onCancelAligned: () -> Unit,
-    onStartManualAlign: () -> Unit,
-    onCancelManualAlign: () -> Unit,
-    onSaveManualAlign: () -> Unit,
-    onStartCrop: () -> Unit,
-    onCancelCrop: () -> Unit,
-    onSaveCrop: () -> Unit,
-    onStartSpotIssues: () -> Unit,
-    onCancelSpotIssues: () -> Unit,
-    onSaveSpotIssues: () -> Unit,
-    onStartClickAlign: () -> Unit,
-    onCancelClickAlign: () -> Unit,
-    onSaveClickAlign: () -> Unit,
+    actions: PhotoToolActions,
     onDeleteRequest: () -> Unit,
-) {
+) = with(actions) {
+    val (hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect,
+        spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints) = tools
     // Material3's default disabled Button colors (a low-alpha tint of MaterialTheme's onSurface,
     // meant for a light/dark *theme surface* background) go nearly invisible against this panel's
     // own Color.Black.copy(alpha = 0.5f) background - MaterialTheme here is the default light

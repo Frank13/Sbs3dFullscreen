@@ -19,7 +19,11 @@ enum class Screen { Welcome, About, Gallery, PlaylistList, PlaylistEdit, Playlis
  */
 enum class PlaylistSlideKind { TITLE, PHOTO, END }
 
-private val videoExtensions = setOf("mp4", "mov", "mkv", "avi")
+// The file extensions the viewer opens (lowercase) - shared by WelcomeScreen's file chooser, the
+// file-association launch below and ImageDecodeCache. Keep build.gradle.kts' fileAssociation(...)
+// list and packaging/msix/AppxManifest.xml in sync when adding a photo format.
+internal val PhotoExtensions = setOf("jpg", "jpeg", "mpo")
+internal val VideoExtensions = setOf("mp4", "mov", "mkv", "avi")
 
 /**
  * One auto-align/correct-zoom attempt's outcome - see AppViewModel.alignToast. [zoomScale]/
@@ -79,7 +83,7 @@ class AppViewModel(initialFile: File?) {
         when {
             initialFile == null -> Screen.Welcome
             // Without VLC a launched video can't play: land on Welcome, where the missing-VLC sheet is raised (see init)
-            initialFile.extension.lowercase() in videoExtensions -> if (Vlc.isInstalled()) Screen.VideoView else Screen.Welcome
+            initialFile.extension.lowercase() in VideoExtensions -> if (Vlc.isInstalled()) Screen.VideoView else Screen.Welcome
             else -> Screen.ImageView
         }
     )
@@ -293,9 +297,9 @@ class AppViewModel(initialFile: File?) {
     private fun visiblePhotos(files: List<File>): Set<File> {
         var visible: Set<File> = files.toSet()
         if (keepBestOfEachOnly) visible = visible intersect bestVersionsOnly(files)
-        if (favoritesOnly) visible = visible.filterTo(mutableSetOf(), Exif3d::getFavoriteFromExif)
+        if (favoritesOnly) visible = visible.filterTo(mutableSetOf()) { Exif3dFlagsCache.get(it).favorite }
         if (excludeStereoIssues) visible = visible.filterTo(mutableSetOf()) {
-            !Exif3d.getWarningFromExif(it) && !rawEditedLabel(it).startsWith("stereo_issues")
+            !Exif3dFlagsCache.get(it).warning && !rawEditedLabel(it).startsWith("stereo_issues")
         }
         return visible
     }
@@ -320,14 +324,14 @@ class AppViewModel(initialFile: File?) {
 
     /** Opens [files] in the viewer; returns false (raising the VLC-missing sheet) if the first is a video and VLC is absent. */
     fun onFilesChosen(files: List<File>): Boolean {
-        if (files.firstOrNull()?.extension?.lowercase() in videoExtensions && !requireVlc()) return false
+        if (files.firstOrNull()?.extension?.lowercase() in VideoExtensions && !requireVlc()) return false
         playingPlaylist = null
         imageFiles = files
         currentImageIndex = 0
         isAutomatedPlaylist = false
         photoTools.resetAll()
         if (anyPhotoFilterActive) snapToVisiblePhoto()
-        screen = if (files.firstOrNull()?.extension?.lowercase() in videoExtensions) {
+        screen = if (files.firstOrNull()?.extension?.lowercase() in VideoExtensions) {
             Screen.VideoView
         } else {
             Screen.ImageView
@@ -365,7 +369,7 @@ class AppViewModel(initialFile: File?) {
 
     init {
         // A video launched via file association without VLC starts on Welcome (see [screen]'s initializer).
-        if (initialFile != null && initialFile.extension.lowercase() in videoExtensions) requireVlc()
+        if (initialFile != null && initialFile.extension.lowercase() in VideoExtensions) requireVlc()
     }
 
     private fun requireVlcIfGalleryHasVideo() {
@@ -394,12 +398,12 @@ class AppViewModel(initialFile: File?) {
         screen = Screen.PlaylistEdit
     }
 
-    /** Confirms the Gallery picker's selection: adds the picked photos to the playlist being edited. */
-    fun confirmGalleryPicker() {
+    /** Confirms the Gallery picker's selection: back on PlaylistEdit, copies the picked photos into the playlist being edited. */
+    suspend fun confirmGalleryPicker() {
         val files = gallery.selectedFiles.toList()
         gallery.close()
-        if (files.isNotEmpty()) addPhotosToEditingPlaylist(files)
         screen = Screen.PlaylistEdit
+        if (files.isNotEmpty()) addPhotosToEditingPlaylist(files)
     }
 
     fun openAbout() {
@@ -508,18 +512,36 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performSaveCrop() {
         if (isAligning || !photoTools.cropMode) return
-        val file = currentImage
         val rect = photoTools.cropRect ?: return
+        runSave("crop_save", afterAttempt = photoTools::cancelCrop) { Crop.saveCrop(it, rect) }
+    }
+
+    /** Flashes [saveToast] for one save attempt - shared by every "Save" path, share and keep-half delete. */
+    private fun reportSaveResult(success: Boolean, exifError: String? = null) {
+        saveToastCounter++
+        saveToast = SaveToast(success = success, exifError = exifError, token = saveToastCounter)
+    }
+
+    /**
+     * The steps every edit tool's "Save" shares: runs [save] on the current photo off the UI thread
+     * with [isAligning] held for the duration, reports the result via [saveToast], calls
+     * [afterAttempt] (typically the tool's cancel, closing it whatever the outcome), and on success
+     * logs [analyticsEvent] then inserts the new file right after the current one and jumps to it.
+     */
+    private suspend fun runSave(
+        analyticsEvent: String,
+        analyticsParams: Map<String, Any?> = emptyMap(),
+        afterAttempt: () -> Unit = {},
+        save: (File) -> SavedFile?,
+    ) {
+        val file = currentImage
         isAligning = true
         try {
-            val saved = if (file != null) {
-                withContext(Dispatchers.IO) { Crop.saveCrop(file, rect) }
-            } else null
-            saveToastCounter++
-            saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
-            photoTools.cancelCrop()
+            val saved = file?.let { withContext(Dispatchers.IO) { save(it) } }
+            reportSaveResult(saved != null, saved?.exifError)
+            afterAttempt()
             if (saved == null) return
-            Analytics.logEvent("crop_save")
+            Analytics.logEvent(analyticsEvent, analyticsParams)
             val insertAt = currentImageIndex + 1
             imageFiles = imageFiles.toMutableList().apply { add(insertAt, saved.file) }
             currentImageIndex = insertAt
@@ -553,25 +575,9 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performSaveSpotIssues() {
         if (isAligning || !photoTools.spotIssuesMode) return
-        val file = currentImage
         val rects = photoTools.spotIssueRects
         if (rects.isEmpty()) return
-        isAligning = true
-        try {
-            val saved = if (file != null) {
-                withContext(Dispatchers.IO) { SpotStereoIssues.saveSpotIssues(file, rects) }
-            } else null
-            saveToastCounter++
-            saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
-            photoTools.cancelSpotIssues()
-            if (saved == null) return
-            Analytics.logEvent("spot_issues_save")
-            val insertAt = currentImageIndex + 1
-            imageFiles = imageFiles.toMutableList().apply { add(insertAt, saved.file) }
-            currentImageIndex = insertAt
-        } finally {
-            isAligning = false
-        }
+        runSave("spot_issues_save", afterAttempt = photoTools::cancelSpotIssues) { SpotStereoIssues.saveSpotIssues(it, rects) }
     }
 
     /** Adds a fractional delta to the pending manual-align offset - see Main.kt's tick loop. */
@@ -592,25 +598,9 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performSaveManualAlign() {
         if (isAligning || !photoTools.manualAlignMode) return
-        val file = currentImage
         val dx = photoTools.manualAlignOffsetX
         val dy = photoTools.manualAlignOffsetY
-        isAligning = true
-        try {
-            val saved = if (file != null) {
-                withContext(Dispatchers.IO) { ManualAlign.saveManualAlign(file, dx, dy) }
-            } else null
-            saveToastCounter++
-            saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
-            photoTools.cancelManualAlign()
-            if (saved == null) return
-            Analytics.logEvent("manual_align_save")
-            val insertAt = currentImageIndex + 1
-            imageFiles = imageFiles.toMutableList().apply { add(insertAt, saved.file) }
-            currentImageIndex = insertAt
-        } finally {
-            isAligning = false
-        }
+        runSave("manual_align_save", afterAttempt = photoTools::cancelManualAlign) { ManualAlign.saveManualAlign(it, dx, dy) }
     }
 
     /** Enters "click matching points" mode for the currently shown photo - see AlignButtonsRow's "Manual Align" submenu. */
@@ -656,26 +646,10 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performSaveClickAlign() {
         if (isAligning || !photoTools.clickAlignMode) return
-        val file = currentImage
         val left = photoTools.clickAlignLeftPoint
         val right = photoTools.clickAlignRightPoint
         if (left == null || right == null) return
-        isAligning = true
-        try {
-            val saved = if (file != null) {
-                withContext(Dispatchers.IO) { ClickAlign.saveClickAlign(file, left, right) }
-            } else null
-            saveToastCounter++
-            saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
-            photoTools.cancelClickAlign()
-            if (saved == null) return
-            Analytics.logEvent("click_align_save")
-            val insertAt = currentImageIndex + 1
-            imageFiles = imageFiles.toMutableList().apply { add(insertAt, saved.file) }
-            currentImageIndex = insertAt
-        } finally {
-            isAligning = false
-        }
+        runSave("click_align_save", afterAttempt = photoTools::cancelClickAlign) { ClickAlign.saveClickAlign(it, left, right) }
     }
 
     /**
@@ -705,27 +679,13 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performSaveAligned() {
         if (isAligning) return
-        val file = currentImage
         val kind = photoTools.pendingAlignKind
-        isAligning = true
-        try {
-            val saved = if (file != null && kind != null) {
-                withContext(Dispatchers.IO) { AutoAlign.saveAligned(file, kind, useNewOpenCv5) }
-            } else null
-            saveToastCounter++
-            saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
-            if (saved == null) return
-            kind?.let {
-                val mode = if (it == AlignKind.HOMOGRAPHY) "auto_align" else "correct_zoom_issues"
-                Analytics.logEvent("align_save", mapOf("mode" to mode))
-            }
-            photoTools.resetAll()
-            val insertAt = currentImageIndex + 1
-            imageFiles = imageFiles.toMutableList().apply { add(insertAt, saved.file) }
-            currentImageIndex = insertAt
-        } finally {
-            isAligning = false
-        }
+        val mode = if (kind == AlignKind.HOMOGRAPHY) "auto_align" else "correct_zoom_issues"
+        // The preview is only dropped on success: confirmSaveAlignedAndNavigate relies on it still
+        // being there to detect a failed save (and the user can retry).
+        runSave("align_save", mapOf("mode" to mode), afterAttempt = {
+            if (saveToast?.success == true) photoTools.resetAll()
+        }) { file -> kind?.let { AutoAlign.saveAligned(file, it, useNewOpenCv5) } }
     }
 
     /** Which eye-half to keep as a standalone 2D photo when deleting an unedited stereo pair - see [performDeleteCurrentImage]. */
@@ -751,8 +711,7 @@ class AppViewModel(initialFile: File?) {
         try {
             if (keepHalf != null) {
                 val saved = withContext(Dispatchers.IO) { KeepHalf.saveHalf(file, keepHalf == KeepHalfSide.LEFT) }
-                saveToastCounter++
-                saveToast = SaveToast(success = saved != null, exifError = saved?.exifError, token = saveToastCounter)
+                reportSaveResult(saved != null, saved?.exifError)
                 if (saved == null) return
                 withContext(Dispatchers.IO) { file.delete() }
                 imageFiles = imageFiles.toMutableList().apply { this[currentImageIndex] = saved.file }
@@ -784,10 +743,7 @@ class AppViewModel(initialFile: File?) {
      */
     suspend fun performShare(type: Share.ShareType, destination: Share.Destination) {
         val file = currentImage ?: return
-        share.perform(file, type, destination) { success ->
-            saveToastCounter++
-            saveToast = SaveToast(success = success, token = saveToastCounter)
-        }
+        share.perform(file, type, destination) { success -> reportSaveResult(success) }
     }
 
     /** Scans playlistsRoot for playlist folders and switches to the PlaylistList screen. */
@@ -842,7 +798,7 @@ class AppViewModel(initialFile: File?) {
      * see PlaylistEditorState.importFolder. Returns false without copying anything if a playlist
      * with the same folder name already exists in the root.
      */
-    fun importPlaylistFolder(folder: File): Boolean {
+    suspend fun importPlaylistFolder(folder: File): Boolean {
         val imported = playlistEditor.importFolder(folder) ?: return false
         screen = Screen.PlaylistEdit
         requireVlcIfPlaylistHasVideo(imported)
@@ -860,7 +816,7 @@ class AppViewModel(initialFile: File?) {
     }
 
     /** Copies the given files (chosen directly via a multi-select file dialog) into the playlist being edited and appends them to its index. */
-    fun addPhotosToEditingPlaylist(files: List<File>) {
+    suspend fun addPhotosToEditingPlaylist(files: List<File>) {
         if (files.any { isVideoFilename(it.name) }) requireVlc()
         playlistEditor.addPhotos(files)
     }
@@ -910,7 +866,7 @@ class AppViewModel(initialFile: File?) {
     }
 
     /** Copies the chosen audio files into the playlist being edited as its soundtrack - returns how many were added. */
-    fun addSoundtrackToEditingPlaylist(files: List<File>): Int {
+    suspend fun addSoundtrackToEditingPlaylist(files: List<File>): Int {
         if (files.isNotEmpty()) requireVlc()
         return playlistEditor.addSoundtrack(files)
     }

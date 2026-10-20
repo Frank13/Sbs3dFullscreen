@@ -7,6 +7,8 @@ import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
 import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -21,11 +23,13 @@ import java.io.File
  * playEditingPlaylist), since those are core navigation state shared with the plain-file-selection
  * path, not playlist-editor-specific.
  */
-class PlaylistEditorState {
+class PlaylistEditorState(rootOverride: File? = null) {
     // Resolved lazily (not on every access) so the one-time rename of the pre-rebrand
     // Pictures/sbs3dFullscreen folder happens at most once per run - existing users keep their
     // playlists. Skipped if the new folder already exists, so nothing is ever overwritten.
+    // [rootOverride] lets tests work in a temp folder instead of the user's real Pictures.
     private val playlistsRoot: File by lazy {
+        if (rootOverride != null) return@lazy rootOverride
         val pictures = File(System.getProperty("user.home"), "Pictures")
         val root = File(pictures, "SBS 3D Viewer")
         val legacy = File(pictures, "sbs3dFullscreen")
@@ -49,6 +53,21 @@ class PlaylistEditorState {
     // Welcome directly), so closing them returns to PlaylistList (refreshed) instead of Welcome.
     var enteredFromList by mutableStateOf(false)
         private set
+
+    // True while importFolder/addPhotos/addSoundtrack copy files (videos can be gigabytes) on a
+    // background thread - drives Main.kt's CopyingFilesOverlay, which also blocks clicks meanwhile
+    // so the playlist being copied into can't be closed/edited underneath the copy.
+    var isCopying by mutableStateOf(false)
+        private set
+
+    private suspend fun <T> copying(block: () -> T): T {
+        isCopying = true
+        try {
+            return withContext(Dispatchers.IO) { block() }
+        } finally {
+            isCopying = false
+        }
+    }
 
     private fun loadAllFromRoot(): List<Playlist> {
         val storage = DesktopPlaylistStorage(playlistsRoot)
@@ -94,7 +113,7 @@ class PlaylistEditorState {
      * create-then-edit flow. Returns null without copying anything if a playlist with the same
      * folder name already exists in the root.
      */
-    fun importFolder(folder: File): Playlist? {
+    suspend fun importFolder(folder: File): Playlist? {
         // Sanitized like startCreate's dirName, so an imported folder can never end up with a
         // different on-disk name (e.g. spaces) than a playlist created directly from the same
         // display name would get - otherwise the two could coexist as distinct directories that
@@ -102,11 +121,11 @@ class PlaylistEditorState {
         // LazyColumn item keys (duplicate key crash).
         val destination = File(playlistsRoot, sanitizedDirName(folder.name))
         if (destination.exists()) return null
-        playlistsRoot.mkdirs()
-        folder.copyRecursively(destination)
-
-        val storage = DesktopPlaylistStorage(playlistsRoot)
-        val playlist = Playlist.loadPlaylist(storage, destination.name)
+        val playlist = copying {
+            playlistsRoot.mkdirs()
+            folder.copyRecursively(destination)
+            Playlist.loadPlaylist(DesktopPlaylistStorage(playlistsRoot), destination.name)
+        }
         editing = playlist
         Analytics.logEvent("playlist_created", mapOf("source" to "import"))
         return playlist
@@ -146,7 +165,7 @@ class PlaylistEditorState {
     }
 
     /** Copies the given files (chosen directly via a multi-select file dialog) into the playlist being edited and appends them to its index. */
-    fun addPhotos(files: List<File>) {
+    suspend fun addPhotos(files: List<File>) {
         val playlist = editing ?: return
         val folder = File(playlist.absolutePath)
         val storage = DesktopPlaylistStorage(folder.parentFile ?: folder)
@@ -156,7 +175,7 @@ class PlaylistEditorState {
         // the same filename crash PlaylistScreen's LazyColumn (duplicate key) and would also have
         // the second import silently overwrite the first one's file content on disk.
         val existingNames = playlist.photos.mapTo(mutableSetOf()) { it.filename }
-        val copiedItems = files.map { src ->
+        val copiedItems = copying { files.map { src ->
             val destName = uniqueDestFilename(src.name, existingNames)
             existingNames += destName
             val dest = File(folder, destName)
@@ -173,9 +192,9 @@ class PlaylistEditorState {
             // `code.toByte()`), turning "è" into "�" so the thumbnail's file is never found.
             val isVideo = isVideoFilename(destName)
             PlaylistItem(destName, dest.toPath().toUri().toASCIIString(), isHalfWidth = isVideo, isVideo = isVideo)
-        }
+        } }
         val updatedPlaylist = playlist.copy(photos = playlist.photos + copiedItems)
-        updatedPlaylist.save(storage)
+        withContext(Dispatchers.IO) { updatedPlaylist.save(storage) }
         editing = updatedPlaylist
         if (copiedItems.isNotEmpty()) {
             Analytics.logEvent("playlist_photos_added", mapOf("count" to copiedItems.size))
@@ -197,12 +216,12 @@ class PlaylistEditorState {
      * Copies the given audio files into the playlist folder and appends them to its soundtrack
      * (played one after the other during the slideshow). Returns how many were added.
      */
-    fun addSoundtrack(files: List<File>): Int {
+    suspend fun addSoundtrack(files: List<File>): Int {
         val playlist = editing ?: return 0
         val folder = File(playlist.absolutePath)
         val taken = playlist.soundtrack.toMutableSet()
         val addedNames = mutableListOf<String>()
-        for (src in files) {
+        copying { for (src in files) {
             // Unlike photos, a soundtrack name also must not collide with any other file of the folder
             // (Android picks "1_name.mp3", "2_name.mp3"... the same way).
             var dest = File(folder, src.name)
@@ -218,7 +237,7 @@ class PlaylistEditorState {
             }
             taken += dest.name
             addedNames += dest.name
-        }
+        } }
         if (addedNames.isNotEmpty()) {
             save(playlist.copy(soundtrack = playlist.soundtrack + addedNames))
             Analytics.logEvent("playlist_music_added", mapOf("count" to addedNames.size))

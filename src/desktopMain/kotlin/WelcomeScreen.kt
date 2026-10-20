@@ -87,7 +87,7 @@ fun WelcomeScreen(
     shrinkControls: Boolean,
     onShrinkControlsChosen: (Boolean) -> Unit,
     onFilesChosen: (List<File>) -> Unit,
-    onImportPlaylist: (File) -> Boolean,
+    onImportPlaylist: suspend (File) -> Boolean,
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
     onOpenAbout: () -> Unit,
@@ -130,7 +130,7 @@ fun WelcomeScreen(
                 val files = chooseFiles(
                     window = window,
                     title = dialogTitle,
-                    extensions = arrayOf("jpg", "jpeg", "mpo", "mp4", "mov", "mkv", "avi"),
+                    extensions = (PhotoExtensions + VideoExtensions).toTypedArray(),
                 )
                 if (files.isNotEmpty()) {
                     onFilesChosen(files)
@@ -145,8 +145,12 @@ fun WelcomeScreen(
                 chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
                 if (chooser.showOpenDialog(window) == JFileChooser.APPROVE_OPTION) {
                     chooser.selectedFile?.let { folder ->
-                        if (!onImportPlaylist(folder)) {
-                            importErrorFolderName = folder.name
+                        // Suspends while the folder is copied in the background (see
+                        // PlaylistEditorState.isCopying / Main.kt's CopyingFilesOverlay).
+                        scope.launch {
+                            if (!onImportPlaylist(folder)) {
+                                importErrorFolderName = folder.name
+                            }
                         }
                     }
                 }

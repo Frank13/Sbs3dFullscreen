@@ -28,9 +28,11 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import fr.camera3d.camera.feature_playlists.ui.fullscreenScrollDurationMs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -43,6 +45,9 @@ import java.io.File
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.time.Duration.Companion.milliseconds
+
+private val Key.isShift: Boolean get() = this == Key.ShiftLeft || this == Key.ShiftRight
+private val Key.isCtrl: Boolean get() = this == Key.CtrlLeft || this == Key.CtrlRight
 
 fun main(args: Array<String>) {
     try {
@@ -323,6 +328,17 @@ private fun runApp(args: Array<String>) = application {
                 // cache. Harmless to run for a playlist's title/end slide (currentImage is null there,
                 // index just out of imageFiles' bounds) or a video (ImageDecodeCache.warm no-ops on
                 // non-photo extensions).
+                // Pre-reads the EXIF3D favorite/warning flags of the whole selection into
+                // Exif3dFlagsCache, so the photo filters (see AppViewModel.visiblePhotos) hit the cache
+                // instead of parsing every file's EXIF on the UI thread at each Next/Previous. Skipped
+                // for a playlist, where the filters never apply.
+                LaunchedEffect(viewModel.screen, viewModel.imageFiles, viewModel.playingPlaylist) {
+                    if (viewModel.screen == Screen.ImageView && viewModel.playingPlaylist == null) {
+                        val files = viewModel.imageFiles
+                        withContext(Dispatchers.IO) { Exif3dFlagsCache.warm(files) }
+                    }
+                }
+
                 LaunchedEffect(viewModel.screen, viewModel.imageFiles, viewModel.currentImageIndex) {
                     if (viewModel.screen == Screen.ImageView) {
                         viewModel.imageFiles.getOrNull(viewModel.currentImageIndex - 1)?.let(ImageDecodeCache::warm)
@@ -342,6 +358,15 @@ private fun runApp(args: Array<String>) = application {
                                     .focusRequester(focusRequester)
                                     .focusable()
                                     .onPreviewKeyEvent { event ->
+                                        val tools = viewModel.photoTools
+                                        // The active edit tool's own "discard" action, null when none is active.
+                                        val cancelActiveTool: (() -> Unit)? = when {
+                                            tools.manualAlignMode -> viewModel::cancelManualAlign
+                                            tools.cropMode -> viewModel::cancelCrop
+                                            tools.spotIssuesMode -> viewModel::cancelSpotIssues
+                                            tools.clickAlignMode -> viewModel::cancelClickAlign
+                                            else -> null
+                                        }
                                         if (imageDialogShown) {
                                             // Leave every key untouched (see imageDialogShown's doc) so
                                             // it reaches the in-scene dialog's own TextField/buttons
@@ -349,125 +374,50 @@ private fun runApp(args: Array<String>) = application {
                                             // Escape closing the dialog, Space typing a literal space,
                                             // and arrow keys moving the text caret all rely on this.
                                             false
-                                        } else if (viewModel.photoTools.manualAlignMode) {
-                                            // Arrow keys nudge the pending offset (see the tick-loop
-                                            // LaunchedEffect above) instead of navigating; Escape
-                                            // cancels the alignment instead of exiting fullscreen (resets
-                                            // the offset, stays in fullscreen); Shift/Ctrl still toggles
-                                            // the info panel as usual (harmless - it doesn't touch the
-                                            // pending offset or navigate away); every other key-down is
-                                            // swallowed so nothing else - navigation, auto-align's "A"
-                                            // shortcut - can mutate state out from under the pending
-                                            // offset while it's active.
-                                            if (event.key in manualAlignDirectionKeys) {
-                                                when (event.type) {
-                                                    KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
-                                                    KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
-                                                    else -> {}
-                                                }
-                                                true
-                                            } else if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                                                viewModel.cancelManualAlign()
-                                                true
-                                            } else if (event.type == KeyEventType.KeyDown &&
-                                                (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                            ) {
-                                                showImageInfoPanel = !showImageInfoPanel
-                                                true
-                                            } else {
-                                                event.type == KeyEventType.KeyDown
-                                            }
-                                        } else if (viewModel.photoTools.cropMode) {
-                                            // Same swallow-everything-except-Escape/Shift/Ctrl treatment
-                                            // as manualAlignMode above: Escape cancels the crop tool
-                                            // (discards any drawn rectangle) instead of exiting
-                                            // fullscreen, and nothing else - navigation, auto-align's
-                                            // "A" shortcut - should be able to mutate state while a
-                                            // crop rectangle is pending Save/Cancel.
-                                            when (event.type) {
-                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                    viewModel.cancelCrop()
+                                        } else if (cancelActiveTool != null) {
+                                            // While an edit tool is active: Escape cancels it instead of
+                                            // exiting fullscreen, Shift/Ctrl still toggle the info panel,
+                                            // and every other key-down is swallowed so nothing else -
+                                            // navigation, auto-align's "A" shortcut - can mutate state out
+                                            // from under the pending edit. Two tool-specific exceptions:
+                                            // manual align's arrow keys feed the tick-loop LaunchedEffect
+                                            // above, and click align repurposes Shift (held) for its
+                                            // alignment preview (see ClickAlign.Preview) - the info panel
+                                            // is already open there by definition, so only Ctrl toggles it.
+                                            when {
+                                                tools.manualAlignMode && event.key in manualAlignDirectionKeys -> {
+                                                    when (event.type) {
+                                                        KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
+                                                        KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
+                                                        else -> {}
+                                                    }
                                                     true
                                                 }
-
-                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                        event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                                    -> {
+                                                tools.clickAlignMode && event.key.isShift -> {
+                                                    when (event.type) {
+                                                        KeyEventType.KeyDown -> viewModel.setClickAlignPreviewActive(true)
+                                                        KeyEventType.KeyUp -> viewModel.setClickAlignPreviewActive(false)
+                                                        else -> {}
+                                                    }
+                                                    true
+                                                }
+                                                event.type != KeyEventType.KeyDown -> false
+                                                event.key == Key.Escape -> {
+                                                    cancelActiveTool()
+                                                    true
+                                                }
+                                                event.key.isShift || event.key.isCtrl -> {
                                                     showImageInfoPanel = !showImageInfoPanel
                                                     true
                                                 }
-
-                                                else -> {
-                                                    event.type == KeyEventType.KeyDown
-                                                }
-                                            }
-                                        } else if (viewModel.photoTools.spotIssuesMode) {
-                                            // Same swallow-everything-except-Escape/Shift/Ctrl treatment
-                                            // as cropMode above: Escape cancels the "Spot stereo issues"
-                                            // tool (discards any drawn rectangles) instead of exiting
-                                            // fullscreen.
-                                            when (event.type) {
-                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                    viewModel.cancelSpotIssues()
-                                                    true
-                                                }
-
-                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                        event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                                    -> {
-                                                    showImageInfoPanel = !showImageInfoPanel
-                                                    true
-                                                }
-
-                                                else -> {
-                                                    event.type == KeyEventType.KeyDown
-                                                }
-                                            }
-                                        } else if (viewModel.photoTools.clickAlignMode) {
-                                            // Same swallow-everything-except-Escape treatment as
-                                            // cropMode/spotIssuesMode above, except Shift and Ctrl are
-                                            // split apart instead of both toggling the info panel: Ctrl
-                                            // still does (unchanged), but Shift is repurposed to drive
-                                            // the Shift-held alignment preview (see ClickAlign.Preview
-                                            // and ImageScreen's clickAlignPreviewActive branch) - the
-                                            // info panel is already open by definition here (that's how
-                                            // the user reached this tool), so there's nothing useful for
-                                            // Shift to toggle instead.
-                                            when (event.type) {
-                                                KeyEventType.KeyDown if event.key == Key.Escape -> {
-                                                    viewModel.cancelClickAlign()
-                                                    true
-                                                }
-
-                                                KeyEventType.KeyDown if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
-                                                    viewModel.setClickAlignPreviewActive(true)
-                                                    true
-                                                }
-
-                                                KeyEventType.KeyUp if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) -> {
-                                                    viewModel.setClickAlignPreviewActive(false)
-                                                    true
-                                                }
-
-                                                KeyEventType.KeyDown if (event.key == Key.CtrlLeft || event.key == Key.CtrlRight) -> {
-                                                    showImageInfoPanel = !showImageInfoPanel
-                                                    true
-                                                }
-
-                                                else -> {
-                                                    event.type == KeyEventType.KeyDown
-                                                }
+                                                else -> true
                                             }
                                         } else {
                                             // Toggles on the key-down of Shift/Ctrl itself (not on every
                                             // event where one happens to be held as a modifier), so a
                                             // press opens the panel and the next press closes it again -
                                             // holding the key no longer matters.
-                                            if (inViewer && event.type == KeyEventType.KeyDown &&
-                                                (event.key == Key.ShiftLeft || event.key == Key.ShiftRight ||
-                                                    event.key == Key.CtrlLeft || event.key == Key.CtrlRight)
-                                            ) {
+                                            if (inViewer && event.type == KeyEventType.KeyDown && (event.key.isShift || event.key.isCtrl)) {
                                                 showImageInfoPanel = !showImageInfoPanel
                                             }
                                             if (!inViewer || event.type != KeyEventType.KeyDown) {
@@ -561,7 +511,7 @@ private fun runApp(args: Array<String>) = application {
                                         pickerMode = viewModel.gallery.pickerMode,
                                         selectedFiles = viewModel.gallery.selectedFiles,
                                         onToggleSelect = { file -> viewModel.toggleGallerySelection(file) },
-                                        onConfirmSelection = { viewModel.confirmGalleryPicker() },
+                                        onConfirmSelection = { coroutineScope.launch { viewModel.confirmGalleryPicker() } },
                                     )
 
                                     Screen.PlaylistList -> PlaylistsScreen(
@@ -589,7 +539,7 @@ private fun runApp(args: Array<String>) = application {
                                             lazyListState = playlistEditListState,
                                             onAddMusic = {
                                                 val files = chooseMusicFiles(window = window, title = addMusicDialogTitle, extensions = arrayOf("mp3", "m4a", "wav", "ogg", "flac"))
-                                                if (files.isNotEmpty()) viewModel.addSoundtrackToEditingPlaylist(files)
+                                                if (files.isNotEmpty()) coroutineScope.launch { viewModel.addSoundtrackToEditingPlaylist(files) }
                                             },
                                             onRemoveSoundtrackItem = viewModel::removeSoundtrackItem,
                                             onAddPhotos = {
@@ -761,55 +711,31 @@ private fun runApp(args: Array<String>) = application {
                                                     onShareChosen = { type, destination ->
                                                         coroutineScope.launch { viewModel.performShare(type, destination) }
                                                     },
-                                                    onAutoAlign = {
-                                                        coroutineScope.launch {
-                                                            viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY)
-                                                        }
-                                                    },
-                                                    onCorrectZoom = {
-                                                        coroutineScope.launch {
-                                                            viewModel.performAutoAlign(file, AlignKind.AFFINE)
-                                                        }
-                                                    },
-                                                    onSaveAligned = {
-                                                        coroutineScope.launch { viewModel.performSaveAligned() }
-                                                    },
-                                                    onCancelAligned = viewModel::cancelAligned,
-                                                    onStartManualAlign = viewModel::startManualAlign,
-                                                    onCancelManualAlign = viewModel::cancelManualAlign,
-                                                    onSaveManualAlign = {
-                                                        coroutineScope.launch { viewModel.performSaveManualAlign() }
-                                                    },
-                                                    onStartCrop = viewModel::startCrop,
-                                                    onCropRectFinalized = viewModel::finalizeCropRect,
-                                                    onCancelCrop = viewModel::cancelCrop,
-                                                    onSaveCrop = {
-                                                        coroutineScope.launch { viewModel.performSaveCrop() }
-                                                    },
-                                                    onStartSpotIssues = viewModel::startSpotIssues,
-                                                    onSpotIssueRectAdded = viewModel::addSpotIssueRect,
-                                                    onCancelSpotIssues = viewModel::cancelSpotIssues,
-                                                    onSaveSpotIssues = {
-                                                        coroutineScope.launch { viewModel.performSaveSpotIssues() }
-                                                    },
-                                                    onStartClickAlign = viewModel::startClickAlign,
-                                                    onClickAlignPointSet = viewModel::setClickAlignPoint,
-                                                    onCancelClickAlign = viewModel::cancelClickAlign,
-                                                    onSaveClickAlign = {
-                                                        coroutineScope.launch { viewModel.performSaveClickAlign() }
-                                                    },
-                                                    onRequestClickAlignPreview = {
-                                                        coroutineScope.launch { viewModel.refreshClickAlignPreview() }
-                                                    },
-                                                    onDeleteCurrentImage = {
-                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage() }
-                                                    },
-                                                    onDeleteKeepingLeft = {
-                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) }
-                                                    },
-                                                    onDeleteKeepingRight = {
-                                                        coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) }
-                                                    },
+                                                    photoToolActions = PhotoToolActions(
+                                                        onAutoAlign = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY) } },
+                                                        onCorrectZoom = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.AFFINE) } },
+                                                        onSaveAligned = { coroutineScope.launch { viewModel.performSaveAligned() } },
+                                                        onCancelAligned = viewModel::cancelAligned,
+                                                        onStartManualAlign = viewModel::startManualAlign,
+                                                        onCancelManualAlign = viewModel::cancelManualAlign,
+                                                        onSaveManualAlign = { coroutineScope.launch { viewModel.performSaveManualAlign() } },
+                                                        onStartCrop = viewModel::startCrop,
+                                                        onCropRectFinalized = viewModel::finalizeCropRect,
+                                                        onCancelCrop = viewModel::cancelCrop,
+                                                        onSaveCrop = { coroutineScope.launch { viewModel.performSaveCrop() } },
+                                                        onStartSpotIssues = viewModel::startSpotIssues,
+                                                        onSpotIssueRectAdded = viewModel::addSpotIssueRect,
+                                                        onCancelSpotIssues = viewModel::cancelSpotIssues,
+                                                        onSaveSpotIssues = { coroutineScope.launch { viewModel.performSaveSpotIssues() } },
+                                                        onStartClickAlign = viewModel::startClickAlign,
+                                                        onClickAlignPointSet = viewModel::setClickAlignPoint,
+                                                        onCancelClickAlign = viewModel::cancelClickAlign,
+                                                        onSaveClickAlign = { coroutineScope.launch { viewModel.performSaveClickAlign() } },
+                                                        onRequestClickAlignPreview = { coroutineScope.launch { viewModel.refreshClickAlignPreview() } },
+                                                        onDeleteCurrentImage = { coroutineScope.launch { viewModel.performDeleteCurrentImage() } },
+                                                        onDeleteKeepingLeft = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) } },
+                                                        onDeleteKeepingRight = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) } },
+                                                    ),
                                                     onImageLoaded = finishEnteringFullscreen,
                                                     onRequestKeyboardFocus = { focusRequester.requestFocus() },
                                                     onDialogShownChanged = { imageDialogShown = it },
@@ -838,6 +764,10 @@ private fun runApp(args: Array<String>) = application {
 
                                 if (isEnteringFullscreen && inViewer) {
                                     FullscreenLoadingOverlay()
+                                }
+
+                                if (viewModel.playlistEditor.isCopying) {
+                                    CopyingFilesOverlay()
                                 }
 
                                 if (viewModel.showVlcMissingSheet) {
