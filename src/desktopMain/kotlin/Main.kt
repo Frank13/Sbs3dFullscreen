@@ -719,6 +719,7 @@ private fun runApp(args: Array<String>) = application {
                                                     favoritesOnly = viewModel.favoritesOnly,
                                                     excludeStereoIssues = viewModel.excludeStereoIssues,
                                                     showPhotoFilters = viewModel.playingPlaylist == null,
+                                                    showEditTools = viewModel.playingPlaylist == null,
                                                     checkLikelySideBySide = viewModel.playingPlaylist == null,
                                                     halveLeftRightImages = viewModel.halveLeftRightImages,
                                                     fullscreenScrollPhoto = viewModel.currentPlaylistItem.takeIf { fullscreenScrollDurationMs != null },

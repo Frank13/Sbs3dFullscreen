@@ -470,15 +470,23 @@ class AppViewModel(initialFile: File?) {
         )
     }
 
+    /**
+     * Whether the per-photo edit tools (align/crop/spot issues/delete) may run: not while a
+     * playlist plays, since each of them inserts into or removes from [imageFiles], which would
+     * desync it from playingPlaylist.photos (and a delete would leave the playlist's index
+     * pointing at a missing file) - see ImageScreen's showEditTools.
+     */
+    private val canEditPhotos: Boolean get() = !isAligning && playingPlaylist == null
+
     /** Enters manual-align mode for the currently shown photo - see Main.kt's arrow-key handling. */
     fun startManualAlign() {
-        if (isAligning) return
+        if (!canEditPhotos) return
         photoTools.startManualAlign()
     }
 
     /** Enters crop mode for the currently shown photo - see Exif3dInfoPanel's Crop button. */
     fun startCrop() {
-        if (isAligning) return
+        if (!canEditPhotos) return
         photoTools.startCrop()
     }
 
@@ -522,7 +530,7 @@ class AppViewModel(initialFile: File?) {
 
     /** Enters "spot stereo issues" mode for the currently shown photo - see Exif3dInfoPanel's button. */
     fun startSpotIssues() {
-        if (isAligning) return
+        if (!canEditPhotos) return
         photoTools.startSpotIssues()
     }
 
@@ -607,7 +615,7 @@ class AppViewModel(initialFile: File?) {
 
     /** Enters "click matching points" mode for the currently shown photo - see AlignButtonsRow's "Manual Align" submenu. */
     fun startClickAlign() {
-        if (isAligning) return
+        if (!canEditPhotos) return
         photoTools.startClickAlign()
     }
 
@@ -677,7 +685,7 @@ class AppViewModel(initialFile: File?) {
      * a second task overlapping this one.
      */
     suspend fun performAutoAlign(file: File, kind: AlignKind) {
-        if (isAligning) return
+        if (!canEditPhotos) return
         isAligning = true
         try {
             val result = withContext(Dispatchers.IO) { AutoAlign.autoAlign(file, kind, useNewOpenCv5) }
@@ -737,7 +745,7 @@ class AppViewModel(initialFile: File?) {
      * from disk.
      */
     suspend fun performDeleteCurrentImage(keepHalf: KeepHalfSide? = null) {
-        if (isAligning) return
+        if (!canEditPhotos) return
         val file = currentImage ?: return
         isAligning = true
         try {

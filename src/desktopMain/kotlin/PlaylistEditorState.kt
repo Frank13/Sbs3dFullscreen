@@ -265,6 +265,10 @@ class PlaylistEditorState {
         val newFolder = File(root, sanitizedDirName(trimmedName))
         if (newFolder != currentFolder && !currentFolder.renameTo(newFolder)) return false
         save(playlist.copy(name = trimmedName, absolutePath = newFolder.absolutePath))
+        // The index only stores filenames, but each in-memory PlaylistItem.imageUriString is an
+        // absolute URI resolved at load time - still pointing into the old folder after the move.
+        // Reloading re-resolves them against newFolder, so Play/thumbnails keep working.
+        editing = Playlist.loadPlaylist(DesktopPlaylistStorage(root), newFolder.name)
         return true
     }
 

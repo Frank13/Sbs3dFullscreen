@@ -141,6 +141,8 @@ fun ImageScreen(
     favoritesOnly: Boolean = false,
     excludeStereoIssues: Boolean = false,
     showPhotoFilters: Boolean = true,
+    // False while playing a playlist - see InfoPanel's showEditTools.
+    showEditTools: Boolean = true,
     checkLikelySideBySide: Boolean = true,
     halveLeftRightImages: Boolean = true,
     // Set only while playing a playlist photo with "force fullscreen by scrolling" on (see
@@ -511,6 +513,7 @@ fun ImageScreen(
                         onDeleteCurrentImage = onDeleteCurrentImage,
                         onDeleteKeepingLeft = onDeleteKeepingLeft,
                         onDeleteKeepingRight = onDeleteKeepingRight,
+                        showEditTools = showEditTools,
                     )
                 }
                 ExifUpdatedToast(exifUpdateToken)

@@ -186,6 +186,10 @@ fun InfoPanel(
     onDeleteCurrentImage: () -> Unit = {},
     onDeleteKeepingLeft: () -> Unit = {},
     onDeleteKeepingRight: () -> Unit = {},
+    // False while a playlist plays: its photo list is a curated index on disk, so the align/crop/
+    // spot-issues/delete tools (which insert or remove files) are hidden - see AppViewModel's
+    // playingPlaylist guards.
+    showEditTools: Boolean = true,
 ) {
     // Read off the UI thread and show a spinner meanwhile: EXIF I/O is normally fast, but this
     // guards against a slow/network drive stalling the toggled-open HUD from appearing at all.
@@ -292,10 +296,10 @@ fun InfoPanel(
             val shift = halfWidth * InfoPanelShiftPercent
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest)
+                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest, showEditTools)
                 }
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest)
+                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlignFromSubmenu, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlignFromSubmenu, onCancelClickAlign, onSaveClickAlign, onDeleteRequest, showEditTools)
                 }
             }
         }
@@ -559,6 +563,7 @@ private fun InfoPanelHalf(
     onCancelClickAlign: () -> Unit,
     onSaveClickAlign: () -> Unit,
     onDeleteRequest: () -> Unit,
+    showEditTools: Boolean,
 ) {
     Box(
         modifier = Modifier.fillMaxSize().padding(start = 24.dp, bottom = 24.dp).offset(x = offsetX),
@@ -587,7 +592,7 @@ private fun InfoPanelHalf(
                 if (!cropMode && !manualAlignMode && !spotIssuesMode && !clickAlignMode && !hasAlignedPreview) {
                     InfoPanelContent(summary, onToggleFavorite, onWarningToggleRequest, onLegendClick)
                 }
-                AlignButtonsRow(shrinkControls, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlign, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlign, onCancelClickAlign, onSaveClickAlign, onDeleteRequest)
+                if (showEditTools) AlignButtonsRow(shrinkControls, hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect, spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, onAutoAlign, onCorrectZoom, onSaveAligned, onCancelAligned, onStartManualAlign, onCancelManualAlign, onSaveManualAlign, onStartCrop, onCancelCrop, onSaveCrop, onStartSpotIssues, onCancelSpotIssues, onSaveSpotIssues, onStartClickAlign, onCancelClickAlign, onSaveClickAlign, onDeleteRequest)
                 ShadowedText(file.name, modifier = Modifier.padding(top = 8.dp))
             }
         }

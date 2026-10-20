@@ -12,6 +12,9 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputField
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * File-based EXIF read/write, desktop counterpart to CameraSync3D's Context/Uri-based Exif.kt.
@@ -143,13 +146,28 @@ object Exif {
                 throw Exception("EXIF verify failed: $firstTag expected '$expectedValue'")
             }
 
-            tempFile.copyTo(file, overwrite = true)
+            replaceAtomically(tempFile, file)
             return true
         } catch (e: Exception) {
             onError?.invoke(e.message ?: e.toString())
             return false
         } finally {
             tempFile.delete()
+        }
+    }
+
+    /**
+     * Swaps [tempFile] in for [target] in a single rename rather than copyTo(overwrite = true),
+     * which truncates [target] first and rewrites it byte by byte - a kill, full disk or I/O error
+     * mid-copy would then leave the user's original photo truncated. Both files live in the same
+     * directory (see the createTempFile calls), so the rename stays on one volume and NTFS can do
+     * it atomically; the plain-move fallback only covers file systems that refuse ATOMIC_MOVE.
+     */
+    private fun replaceAtomically(tempFile: File, target: File) {
+        try {
+            Files.move(tempFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: AtomicMoveNotSupportedException) {
+            Files.move(tempFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -200,7 +218,7 @@ object Exif {
         val tempFile = File.createTempFile("exif_temp_", ".jpg", dest.parentFile)
         return try {
             FileOutputStream(tempFile).use { out -> ExifRewriter().updateExifMetadataLossless(dest, out, outputSet) }
-            tempFile.copyTo(dest, overwrite = true)
+            replaceAtomically(tempFile, dest)
             null
         } catch (e: Exception) {
             val message = e.message ?: e.toString()
