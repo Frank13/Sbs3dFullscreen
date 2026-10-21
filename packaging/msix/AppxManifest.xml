@@ -12,7 +12,8 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  xmlns:desktop7="http://schemas.microsoft.com/appx/manifest/desktop/windows10/7"
+  IgnorableNamespaces="uap rescap desktop7">
 
   <Identity
     Name="{{IDENTITY_NAME}}"
@@ -64,6 +65,13 @@
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
+        <!-- Package-managed desktop shortcut. A hand-made one stores the icon as a path into the
+             versioned WindowsApps folder, which each Store update deletes, leaving a blank icon;
+             this one is recreated with the package, so [{Package}] always points at the current
+             version. Requires Windows 10 2004+; older builds ignore it (desktop7 is ignorable). -->
+        <desktop7:Extension Category="windows.shortcut">
+          <desktop7:Shortcut File="[{Desktop}]\SBS 3D Viewer.lnk" Icon="[{Package}]\{{EXECUTABLE}}" />
+        </desktop7:Extension>
       </Extensions>
     </Application>
   </Applications>
