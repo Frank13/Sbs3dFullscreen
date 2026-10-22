@@ -243,4 +243,8 @@
     <string name="whats_new_v111_item_1">Défilement plein écran des photos de diaporama</string>
     <string name="whats_new_v111_item_2">Créez un raccourci sur le bureau depuis l'écran d'accueil</string>
     <string name="whats_new_v111_item_3">Barres de défilement et retour à la même position</string>
+    <!-- v1.2.0 -->
+    <string name="whats_new_v120_item_1">Ajoutez un générique défilant à la fin de vos diaporamas</string>
+    <string name="whats_new_v120_item_2">Ouvrez les photos 3D .mpo d'un double-clic</string>
+    <string name="whats_new_v120_item_3">Correction : photos absentes des diaporamas aux noms accentués</string>
 </resources>

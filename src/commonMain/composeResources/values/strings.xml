@@ -243,4 +243,8 @@
     <string name="whats_new_v111_item_1">Playlist photos can scroll to fill the whole screen</string>
     <string name="whats_new_v111_item_2">Create a desktop shortcut from the home screen</string>
     <string name="whats_new_v111_item_3">Scrollbars added, and lists keep their scroll position</string>
+    <!-- v1.2.0 -->
+    <string name="whats_new_v120_item_1">Add rolling credits at the end of your playlists</string>
+    <string name="whats_new_v120_item_2">Open .mpo 3D photos with a double-click</string>
+    <string name="whats_new_v120_item_3">Fix: photos missing in playlists with accented names</string>
 </resources>

@@ -78,6 +78,8 @@ private fun runApp(args: Array<String>) = application {
     // Windows launches the app with the file path as an argument when it's opened
     // via a file association (double-click, "Open with sbs3dViewer", etc.).
     val initialFile = args.firstOrNull()?.let(::File)?.takeIf { it.isFile }
+    // How the app was opened: the associated file's extension (jpg/jpeg/mpo), or "none" from the Start menu/shortcut.
+    val appLaunchParams = mapOf("launch_file_type" to (initialFile?.extension?.lowercase() ?: "none"))
     val windowState = rememberWindowState(
         placement = if (initialFile != null) WindowPlacement.Maximized else WindowPlacement.Floating
     )
@@ -92,7 +94,7 @@ private fun runApp(args: Array<String>) = application {
     LaunchedEffect(Unit) {
         // No-ops until consent is granted - see Analytics.logEvent. Confirming the dialog below
         // fires this same event explicitly, so a first-run "Allow" still counts as a launch.
-        Analytics.logEvent("app_launch")
+        Analytics.logEvent("app_launch", appLaunchParams)
     }
     // Announced once after an update, on the Welcome screen only (a launch via file association
     // goes straight to the viewer and must not be interrupted) and after the consent dialog.
@@ -785,7 +787,7 @@ private fun runApp(args: Array<String>) = application {
                                     AnalyticsConsentDialog(onAnswered = { granted ->
                                         Analytics.setConsent(granted)
                                         analyticsConsentAnswered = true
-                                        if (granted) Analytics.logEvent("app_launch")
+                                        if (granted) Analytics.logEvent("app_launch", appLaunchParams)
                                     })
                                 }
 
