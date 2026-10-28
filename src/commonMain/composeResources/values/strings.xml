@@ -127,6 +127,12 @@
     <string name="align_manual_align_keyboard_option">Keyboard</string>
     <string name="align_manual_align_click_option">Click matching points</string>
     <string name="click_align_preview_hint">Keep holding Shift to see the preview</string>
+    <string name="copy_from_image_button">Copy from image</string>
+    <string name="copy_from_image_left_to_right_option">From left to right</string>
+    <string name="copy_from_image_right_to_left_option">From right to left</string>
+    <string name="copy_from_image_points_toast">Align the backgrounds of the areas to copy by clicking matching points on the left and right images</string>
+    <string name="copy_from_image_paint_right_toast">Click on the right image to replace what's under the cursor. Hold Shift to preview. Mouse wheel: brush size</string>
+    <string name="copy_from_image_paint_left_toast">Click on the left image to replace what's under the cursor. Hold Shift to preview. Mouse wheel: brush size</string>
     <string name="align_save_button">Save</string>
     <string name="crop_button">Crop</string>
     <string name="spot_stereo_issues_button">Spot stereo issues</string>

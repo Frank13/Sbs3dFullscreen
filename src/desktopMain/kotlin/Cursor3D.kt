@@ -349,8 +349,9 @@ fun Modifier.cursor3DDepthTarget(shiftPercent: Float): Modifier {
  * rectangle). Both drag callbacks are read through a SideEffect-refreshed holder, same rationale as
  * [Modifier.cursor3DClickTarget]'s latestOnClick. Unlike the click registry, which tool is active
  * (if any) is entirely the caller's responsibility - ImageScreen.kt dispatches
- * [onRectDragChange]/[onRectDragEnd] to whichever of its two tools is currently active, since only
- * one can be at a time.
+ * [onRectDragChange]/[onRectDragEnd] to whichever of its tools is currently active, since only
+ * one can be at a time. The "Copy from image" tool's brush also rides on this drag: it just paints
+ * along each successive `current` position instead of reading it as a rectangle corner.
  */
 @Composable
 fun Stereo3DCursorHost(
@@ -373,6 +374,9 @@ fun Stereo3DCursorHost(
     // way every other pointer event here is (see the consume() call below), so it never also
     // triggers native Compose scroll behavior on whatever's underneath.
     onScroll: (delta: Float) -> Unit = {},
+    // Fired with the clamped left-half-local cursor position on every move/press, and null once the
+    // pointer leaves the window - see ImageScreen's "Copy from image" brush outline, which follows it.
+    onCursorMove: (Offset?) -> Unit = {},
     // Mirrors AppViewModel.shrinkControls (see ShrinkControls.kt's shrinkHorizontally): when on,
     // every other overlay control is squeezed horizontally by 2, so the cursor dots get the same
     // treatment for visual consistency - squeezed around their own center, which just turns the
@@ -402,6 +406,8 @@ fun Stereo3DCursorHost(
     SideEffect { latestOnRawClick.value = onRawClick }
     val latestOnScroll = remember { mutableStateOf(onScroll) }
     SideEffect { latestOnScroll.value = onScroll }
+    val latestOnCursorMove = remember { mutableStateOf(onCursorMove) }
+    SideEffect { latestOnCursorMove.value = onCursorMove }
     CompositionLocalProvider(
         LocalCursorHitRegistry provides registry,
         LocalCursorScrubRegistry provides scrubRegistry,
@@ -453,6 +459,7 @@ fun Stereo3DCursorHost(
                                         PointerEventType.Move -> {
                                             cursorPos = logical
                                             lastMoveTick++
+                                            latestOnCursorMove.value(logical)
                                             val scrub = activeScrub
                                             if (scrub != null) {
                                                 scrub.onScrub(scrubFraction(scrub, logical))
@@ -463,6 +470,7 @@ fun Stereo3DCursorHost(
                                         PointerEventType.Press -> {
                                             cursorPos = logical
                                             lastMoveTick++
+                                            latestOnCursorMove.value(logical)
                                             // A press that lands on a registered scrub target (the
                                             // video progress bar) starts scrubbing; a press on a
                                             // registered text-click target (StereoBlinkingCaretTextField)
@@ -524,6 +532,7 @@ fun Stereo3DCursorHost(
                                         }
                                         PointerEventType.Exit -> {
                                             cursorPos = null
+                                            latestOnCursorMove.value(null)
                                             pressStart = null
                                             activeScrub = null
                                             if (rectDragStart != null) {

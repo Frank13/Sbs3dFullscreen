@@ -27,6 +27,12 @@ data class PhotoToolActions(
     val onCancelClickAlign: () -> Unit = {},
     val onSaveClickAlign: () -> Unit = {},
     val onRequestClickAlignPreview: () -> Unit = {},
+    val onStartCopyFromImage: (CopyDirection) -> Unit = {},
+    val onCopyAlignPointSet: (isLeft: Boolean, PointFraction) -> Unit = { _, _ -> },
+    val onCopyPaintStroke: (eyeWidth: Int, eyeHeight: Int, from: PointFraction?, to: PointFraction) -> Unit = { _, _, _, _ -> },
+    val onScaleCopyBrush: (Float) -> Unit = {},
+    val onCancelCopyFromImage: () -> Unit = {},
+    val onSaveCopyFromImage: () -> Unit = {},
     val onDeleteCurrentImage: () -> Unit = {},
     val onDeleteKeepingLeft: () -> Unit = {},
     val onDeleteKeepingRight: () -> Unit = {},
@@ -48,7 +54,9 @@ data class PhotoToolsUiState(
     val hasSpotIssueRects: Boolean = false,
     val clickAlignMode: Boolean = false,
     val hasClickAlignPoints: Boolean = false,
+    val copyFromImageMode: Boolean = false,
+    val hasCopyPainting: Boolean = false,
 ) {
     /** True while any tool owns the panel (only its Cancel/Save pair shows). */
-    val anyToolActive: Boolean get() = manualAlignMode || cropMode || spotIssuesMode || clickAlignMode || hasAlignedPreview
+    val anyToolActive: Boolean get() = manualAlignMode || cropMode || spotIssuesMode || clickAlignMode || copyFromImageMode || hasAlignedPreview
 }

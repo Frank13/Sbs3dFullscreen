@@ -23,6 +23,8 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,8 +38,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
@@ -166,6 +171,12 @@ fun ImageScreen(
     clickAlignRightPoint: PointFraction? = null,
     clickAlignPreviewActive: Boolean = false,
     clickAlignPreview: ClickAlign.Preview? = null,
+    copyDirection: CopyDirection? = null,
+    copyAlignLeftPoint: PointFraction? = null,
+    copyAlignRightPoint: PointFraction? = null,
+    copyMask: CopyFromImageMask? = null,
+    copyUnalignedPreview: Boolean = false,
+    copyBrushRadius: Float = 0.04f,
     pendingNavigation: PendingNavigationDirection? = null,
     onConfirmSaveAlignedAndNavigate: () -> Unit = {},
     onDiscardAlignedPreviewAndNavigate: () -> Unit = {},
@@ -316,16 +327,33 @@ fun ImageScreen(
         }
     }
 
+    // "Copy from image" phases: first pick one matching point per eye (exactly like click align),
+    // then - once both are set - paint with the brush. See PhotoToolsState.copyPaintingPhase.
+    val copyMode = copyDirection != null
+    val copyPainting = copyMode && copyAlignLeftPoint != null && copyAlignRightPoint != null
+    val copyPickingPoints = copyMode && !copyPainting
+    // Previous brush position (eye-half fraction) within the current stroke, so consecutive mouse
+    // moves are joined by a continuous line of dabs - null between strokes. Only read from pointer
+    // callbacks, never during composition.
+    val lastCopyPaint = remember(file) { mutableStateOf<PointFraction?>(null) }
+    // Clamped left-half-local cursor position for the brush outline - only read inside
+    // CopyBrushOutline's draw lambda, so moving the mouse doesn't recompose this whole screen.
+    val copyBrushPos = remember { mutableStateOf<Offset?>(null) }
+    // derivedStateOf so this screen only recomposes when Save becomes enabled, not on every stroke
+    // (each one bumps the mask's version).
+    val hasCopyPainting by remember(copyMask) { derivedStateOf { copyMask != null && !copyMask.isEmpty } }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val halfWidthPx = with(density) { (maxWidth / 2).toPx() }
         val boxHeightPx = with(density) { maxHeight.toPx() }
 
         Stereo3DCursorHost(
-            rectDragActive = (cropMode && cropRect == null) || spotIssuesMode,
-            rawClickActive = clickAlignMode,
+            rectDragActive = (cropMode && cropRect == null) || spotIssuesMode || copyPainting,
+            rawClickActive = clickAlignMode || copyPickingPoints,
             onRawClick = { halfLocal, isRightHalf ->
                 val bitmap = imageBitmap
+                val onPointSet = if (copyPickingPoints) photoToolActions.onCopyAlignPointSet else photoToolActions.onClickAlignPointSet
                 if (bitmap != null) {
                     val halfWidthSrc = bitmap.width / 2
                     if (halveLeftRightImages) {
@@ -337,12 +365,12 @@ fun ImageScreen(
                         val isLeftSub = halfLocal.x < subBoxWidthPx
                         val localX = if (isLeftSub) halfLocal.x else halfLocal.x - subBoxWidthPx
                         val point = pixelToImageFraction(Offset(localX, halfLocal.y), subBoxWidthPx, boxHeightPx, halfWidthSrc, bitmap.height, halveLeftRightImages)
-                        photoToolActions.onClickAlignPointSet(isLeftSub, point)
+                        onPointSet(isLeftSub, point)
                     } else {
                         // Default layout: each physical half already shows one whole eye's photo
                         // (see StereoImage's doc), so isRightHalf alone says which eye was clicked.
                         val point = pixelToImageFraction(halfLocal, halfWidthPx, boxHeightPx, halfWidthSrc, bitmap.height, false)
-                        photoToolActions.onClickAlignPointSet(!isRightHalf, point)
+                        onPointSet(!isRightHalf, point)
                     }
                 }
             },
@@ -351,7 +379,7 @@ fun ImageScreen(
             // Stereo3DCursorHost's doc) - overridden on here too while the click-align tool is
             // active, so the cursor matches the 0%-depth image/crosshairs it's hovering (see the
             // .cursor3DDepthTarget(0f) below) instead of always floating at the default -1%.
-            useDepthRegistry = shrinkControls || clickAlignMode,
+            useDepthRegistry = shrinkControls || clickAlignMode || copyMode,
             // Aliases the mouse wheel to the Next/Previous arrow keys (see Main.kt's
             // onPreviewKeyEvent), same "backward" = forward-in-time convention as scrolling down a
             // list: scrolling backward/down (positive delta) advances to the next image, scrolling
@@ -360,12 +388,27 @@ fun ImageScreen(
             // navigation during those modes (navigating would otherwise discard the pending edit,
             // e.g. click align's placed points).
             onScroll = { delta ->
-                if (!manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !anyDialogShown) {
+                if (copyPainting) {
+                    // Wheel resizes the "Copy from image" brush instead: forward/up grows it.
+                    if (delta < 0) photoToolActions.onScaleCopyBrush(1.15f) else if (delta > 0) photoToolActions.onScaleCopyBrush(1f / 1.15f)
+                } else if (!manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !copyMode && !anyDialogShown) {
                     if (delta > 0) onNextImage() else if (delta < 0) onPreviousImage()
                 }
             },
+            onCursorMove = { copyBrushPos.value = it },
             onRectDragChange = { start, current ->
-                if (spotIssuesMode) {
+                val bitmap = imageBitmap
+                if (copyPainting) {
+                    if (current == null || bitmap == null) {
+                        lastCopyPaint.value = null
+                    } else {
+                        val (origin, cropSize) = copyEyeCrop(bitmap, aligned = !copyUnalignedPreview, copyAlignLeftPoint, copyAlignRightPoint,
+                            isLeftEye = !copyDirection.targetIsRight)
+                        val to = logicalToEyeFraction(current, halfWidthPx, boxHeightPx, origin, cropSize, bitmap, halveLeftRightImages)
+                        photoToolActions.onCopyPaintStroke(bitmap.width / 2, bitmap.height, lastCopyPaint.value, to)
+                        lastCopyPaint.value = to
+                    }
+                } else if (spotIssuesMode) {
                     spotIssueDragStartPx = start
                     spotIssueDragCurrentPx = current
                 } else {
@@ -373,7 +416,9 @@ fun ImageScreen(
                     cropDragCurrentPx = current
                 }
             },
-            onRectDragEnd = { start, end ->
+            onRectDragEnd = onRectDragEnd@{ start, end ->
+                // The brush already painted along the drag in onRectDragChange.
+                if (copyPainting) return@onRectDragEnd
                 val bitmap = imageBitmap
                 if (bitmap != null) {
                     val frac = computeDragFraction(bitmap, halveLeftRightImages, halfWidthPx, boxHeightPx, start, end)
@@ -400,12 +445,19 @@ fun ImageScreen(
                     // comparison layout/crosshairs/preview are all drawn at (no shift - see
                     // ClickAlignComparisonLayout's doc), unlike every other registered panel here,
                     // which floats at a small negative %.
-                    .then(if (clickAlignMode) Modifier.cursor3DDepthTarget(0f) else Modifier),
+                    .then(if (clickAlignMode || copyMode) Modifier.cursor3DDepthTarget(0f) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
                 imageBitmap?.let { bitmap ->
                     val preview = clickAlignPreview
-                    if (clickAlignMode && clickAlignPreviewActive && preview != null) {
+                    if (copyPainting) {
+                        CopyFromImageView(bitmap, halveLeftRightImages, copyDirection, copyAlignLeftPoint, copyAlignRightPoint,
+                            aligned = !copyUnalignedPreview, copyMask)
+                        CopyBrushOutline(bitmap, halveLeftRightImages, copyBrushPos, copyBrushRadius, copyAlignLeftPoint, copyAlignRightPoint,
+                            aligned = !copyUnalignedPreview, isLeftEye = !copyDirection.targetIsRight, shrinkControls)
+                    } else if (copyPickingPoints && halveLeftRightImages) {
+                        ClickAlignComparisonLayout(bitmap, halveLeftRightImages)
+                    } else if (clickAlignMode && clickAlignPreviewActive && preview != null) {
                         when (preview) {
                             is ClickAlign.Preview.Split -> ClickAlignSplitPreview(preview.left, preview.right, halveLeftRightImages)
                             is ClickAlign.Preview.Anaglyph -> ClickAlignAnaglyphPreview(preview.bitmap)
@@ -420,6 +472,9 @@ fun ImageScreen(
                     }
                     if (clickAlignMode && !(clickAlignPreviewActive && preview != null)) {
                         ClickAlignPointsOverlay(bitmap, halveLeftRightImages, shrinkControls, clickAlignLeftPoint, clickAlignRightPoint)
+                    }
+                    if (copyPickingPoints) {
+                        ClickAlignPointsOverlay(bitmap, halveLeftRightImages, shrinkControls, copyAlignLeftPoint, copyAlignRightPoint)
                     }
                 }
                 if (decodeFailed && imageBitmap == null) {
@@ -474,6 +529,8 @@ fun ImageScreen(
                             hasSpotIssueRects = spotIssueRects.isNotEmpty(),
                             clickAlignMode = clickAlignMode,
                             hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
+                            copyFromImageMode = copyMode,
+                            hasCopyPainting = hasCopyPainting,
                         ),
                         actions = photoToolActions,
                         showEditTools = showEditTools,
@@ -485,6 +542,14 @@ fun ImageScreen(
                 ShareResultToast(shareToast)
                 NotLikely3DToast(notLikely3DToken)
                 ClickAlignPreviewHintToast(visible = clickAlignMode && clickAlignPreviewActive && clickAlignPreview == null)
+                CopyFromImageGuideToast(
+                    when {
+                        copyPickingPoints -> CopyFromImageGuide.PICK_POINTS
+                        copyPainting && copyDirection.targetIsRight -> CopyFromImageGuide.PAINT_LEFT_TO_RIGHT
+                        copyPainting -> CopyFromImageGuide.PAINT_RIGHT_TO_LEFT
+                        else -> null
+                    }
+                )
                 // Rendered here rather than after Stereo3DCursorHost's closing brace (as an
                 // ImageScreen-level sibling) so they stay descendants of its pointerInput Box and
                 // LocalCursorHitRegistry CompositionLocalProvider - same reasoning as InfoPanel's
@@ -1104,6 +1169,173 @@ private fun ClickAlignCrosshairInBox(point: PointFraction?, bitmap: ImageBitmap,
                 val strokePx = ClickAlignCrosshairStroke.toPx()
                 drawLine(ClickAlignPinkColor, Offset(0f, armPx), Offset(size.width, armPx), strokeWidth = strokePx)
                 drawLine(ClickAlignPinkColor, Offset(armPx, 0f), Offset(armPx, size.height), strokeWidth = strokePx)
+            }
+        }
+    }
+}
+
+/**
+ * Which part of one eye-half the "Copy from image" view shows: with [aligned], the same
+ * common-overlap crop [StereoImage] uses for a manual-align offset of `left - right` (so the two
+ * clicked points land on top of each other, see ClickAlign's doc), otherwise the whole eye-half -
+ * the Shift-held "as it will be saved" preview.
+ */
+private fun copyEyeCrop(bitmap: ImageBitmap, aligned: Boolean, left: PointFraction?, right: PointFraction?, isLeftEye: Boolean): Pair<IntOffset, IntSize> {
+    val halfWidth = bitmap.width / 2
+    val heightPx = bitmap.height
+    if (!aligned || left == null || right == null) return IntOffset.Zero to IntSize(halfWidth, heightPx)
+    val dx = ((left.x - right.x) * halfWidth).roundToInt().coerceIn(-(halfWidth - 1).coerceAtLeast(0), (halfWidth - 1).coerceAtLeast(0))
+    val dy = ((left.y - right.y) * heightPx).roundToInt().coerceIn(-(heightPx - 1).coerceAtLeast(0), (heightPx - 1).coerceAtLeast(0))
+    val origin = if (isLeftEye) IntOffset(maxOf(dx, 0), maxOf(dy, 0)) else IntOffset(maxOf(-dx, 0), maxOf(-dy, 0))
+    return origin to IntSize(halfWidth - abs(dx), heightPx - abs(dy))
+}
+
+/** Where [StereoHalfImage]'s fit-and-center math puts a [cropSize] region inside a [boxWidth]x[boxHeight] box: (dst top-left, dst size). */
+private fun fitCrop(cropSize: IntSize, boxWidth: Float, boxHeight: Float, halveLeftRightImages: Boolean): Pair<Offset, Size> {
+    val effectiveWidthPx = if (halveLeftRightImages) cropSize.width / 2f else cropSize.width.toFloat()
+    val scale = minOf(boxWidth / effectiveWidthPx, boxHeight / cropSize.height)
+    val dstWidth = effectiveWidthPx * scale
+    val dstHeight = cropSize.height * scale
+    return Offset((boxWidth - dstWidth) / 2f, (boxHeight - dstHeight) / 2f) to Size(dstWidth, dstHeight)
+}
+
+/** Converts the cursor's left-half-local position into a fraction of the whole eye-half, through the crop currently shown. */
+private fun logicalToEyeFraction(
+    pos: Offset,
+    halfWidthPx: Float,
+    boxHeightPx: Float,
+    origin: IntOffset,
+    cropSize: IntSize,
+    bitmap: ImageBitmap,
+    halveLeftRightImages: Boolean,
+): PointFraction {
+    val (dstOffset, dstSize) = fitCrop(cropSize, halfWidthPx, boxHeightPx, halveLeftRightImages)
+    val eyeX = origin.x + (pos.x - dstOffset.x) / dstSize.width * cropSize.width
+    val eyeY = origin.y + (pos.y - dstOffset.y) / dstSize.height * cropSize.height
+    return PointFraction(eyeX / (bitmap.width / 2), eyeY / bitmap.height)
+}
+
+/**
+ * The "Copy from image" painting view: both eye-halves laid out like [StereoImage] (aligned on the
+ * two clicked points unless [aligned] is off), with the target eye-half (see [CopyDirection])
+ * showing the source eye's aligned pixels wherever [mask] has been painted - composited live on
+ * the GPU (source drawn into a layer, then masked with DstIn) so a stroke only has to rebuild the
+ * small mask bitmap, not the full-resolution photo. The saved result is computed the same way at
+ * full resolution by CopyFromImage.saveCopyFromImage.
+ */
+@Composable
+private fun CopyFromImageView(
+    bitmap: ImageBitmap,
+    halveLeftRightImages: Boolean,
+    direction: CopyDirection,
+    left: PointFraction,
+    right: PointFraction,
+    aligned: Boolean,
+    mask: CopyFromImageMask?,
+) {
+    // Reading version here (not in ImageScreen) keeps per-stroke recomposition local to this view.
+    val maskVersion = mask?.version
+    val maskBitmap = remember(mask, maskVersion) { mask?.takeIf { !it.isEmpty }?.toImageBitmap() }
+    val offset = CopyFromImage.sourceOffset(direction, left, right)
+    Row(Modifier.fillMaxSize()) {
+        for (isLeftEye in listOf(true, false)) {
+            val isTarget = isLeftEye != direction.targetIsRight
+            Box(Modifier.fillMaxSize().weight(1f)) {
+                CopyFromImageHalf(bitmap, halveLeftRightImages, isLeftEye, left, right, aligned, if (isTarget) maskBitmap else null, offset)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CopyFromImageHalf(
+    bitmap: ImageBitmap,
+    halveLeftRightImages: Boolean,
+    isLeftEye: Boolean,
+    left: PointFraction,
+    right: PointFraction,
+    aligned: Boolean,
+    maskBitmap: ImageBitmap?,
+    sourceOffset: PointFraction,
+) {
+    val halfWidth = bitmap.width / 2
+    val (origin, cropSize) = copyEyeCrop(bitmap, aligned, left, right, isLeftEye)
+    Canvas(Modifier.fillMaxSize()) {
+        val (dst, dstSize) = fitCrop(cropSize, size.width, size.height, halveLeftRightImages)
+        val eyeBaseX = if (isLeftEye) 0 else halfWidth
+        drawImage(
+            image = bitmap,
+            srcOffset = IntOffset(eyeBaseX + origin.x, origin.y),
+            srcSize = cropSize,
+            dstOffset = IntOffset(dst.x.toInt(), dst.y.toInt()),
+            dstSize = IntSize(dstSize.width.toInt(), dstSize.height.toInt()),
+            filterQuality = FilterQuality.High,
+        )
+        if (maskBitmap == null) return@Canvas
+        // Screen px per eye px - differs between X and Y when halveLeftRightImages squeezes.
+        val sx = dstSize.width / cropSize.width
+        val sy = dstSize.height / cropSize.height
+        val eyeDstSize = IntSize((halfWidth * sx).roundToInt(), (bitmap.height * sy).roundToInt())
+        val sourceBaseX = if (isLeftEye) halfWidth else 0
+        val shiftX = sourceOffset.x * halfWidth
+        val shiftY = sourceOffset.y * bitmap.height
+        val bounds = Rect(dst, dstSize)
+        clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) {
+            drawContext.canvas.saveLayer(bounds, Paint())
+            // Source eye placed so its pixel (t + shift) lands where the target's pixel t is drawn.
+            drawImage(
+                image = bitmap,
+                srcOffset = IntOffset(sourceBaseX, 0),
+                srcSize = IntSize(halfWidth, bitmap.height),
+                dstOffset = IntOffset((dst.x - (origin.x + shiftX) * sx).roundToInt(), (dst.y - (origin.y + shiftY) * sy).roundToInt()),
+                dstSize = eyeDstSize,
+                filterQuality = FilterQuality.High,
+            )
+            drawImage(
+                image = maskBitmap,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(maskBitmap.width, maskBitmap.height),
+                dstOffset = IntOffset((dst.x - origin.x * sx).roundToInt(), (dst.y - origin.y * sy).roundToInt()),
+                dstSize = eyeDstSize,
+                blendMode = BlendMode.DstIn,
+                filterQuality = FilterQuality.Low,
+            )
+            drawContext.canvas.restore()
+        }
+    }
+}
+
+/**
+ * Outline of the "Copy from image" brush under the cursor, drawn at the same position in both
+ * halves (no depth shift: like the click-align crosshairs it marks a spot ON the photo, whose two
+ * eye-halves are aligned at that position). An ellipse rather than a circle while
+ * [halveLeftRightImages] squeezes the photo, so it matches the area actually painted.
+ */
+@Composable
+private fun CopyBrushOutline(
+    bitmap: ImageBitmap,
+    halveLeftRightImages: Boolean,
+    brushPos: State<Offset?>,
+    radiusFraction: Float,
+    left: PointFraction,
+    right: PointFraction,
+    aligned: Boolean,
+    isLeftEye: Boolean,
+    shrinkControls: Boolean,
+) {
+    val (_, cropSize) = copyEyeCrop(bitmap, aligned, left, right, isLeftEye)
+    Row(Modifier.fillMaxSize()) {
+        repeat(2) {
+            Box(Modifier.fillMaxSize().weight(1f)) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val pos = brushPos.value ?: return@Canvas
+                    val (_, dstSize) = fitCrop(cropSize, size.width, size.height, halveLeftRightImages)
+                    val ry = radiusFraction * bitmap.height * dstSize.height / cropSize.height
+                    val rx = radiusFraction * bitmap.height * dstSize.width / cropSize.width
+                    val strokeWidth = (if (shrinkControls) 3.dp else 2.dp).toPx()
+                    drawOval(Color.Black.copy(alpha = 0.6f), Offset(pos.x - rx, pos.y - ry), Size(rx * 2, ry * 2), style = Stroke(strokeWidth + 2f))
+                    drawOval(Color.White, Offset(pos.x - rx, pos.y - ry), Size(rx * 2, ry * 2), style = Stroke(strokeWidth))
+                }
             }
         }
     }

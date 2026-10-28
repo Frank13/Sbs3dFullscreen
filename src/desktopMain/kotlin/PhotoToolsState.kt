@@ -92,8 +92,38 @@ class PhotoToolsState {
     var clickAlignPreview by mutableStateOf<ClickAlign.Preview?>(null)
         private set
 
-    /** The mutual-exclusion guard [startManualAlign]/[startCrop]/[startSpotIssues]/[startClickAlign] all share. */
-    val anyToolActive: Boolean get() = manualAlignMode || cropMode || spotIssuesMode || clickAlignMode
+    // Non-null while the "Copy from image" tool is active (see AlignButtonsRow's "Copy from image"
+    // submenu and CopyFromImage.kt) - from the submenu choice until Cancel/Save, same
+    // lock-out-other-tools treatment as clickAlignMode. Its first phase reuses the click-align
+    // points below (copyAlignLeftPoint/RightPoint); once both are set, the tool switches to painting.
+    var copyDirection by mutableStateOf<CopyDirection?>(null)
+        private set
+    var copyAlignLeftPoint by mutableStateOf<PointFraction?>(null)
+        private set
+    var copyAlignRightPoint by mutableStateOf<PointFraction?>(null)
+        private set
+
+    // Created on the first brush stroke (its size depends on the decoded photo) - see paintCopyStroke.
+    var copyMask by mutableStateOf<CopyFromImageMask?>(null)
+        private set
+
+    // True while Shift is held during the painting phase (see Main.kt's onPreviewKeyEvent): the
+    // view temporarily drops the alignment to show the photo as it will be saved.
+    var copyUnalignedPreview by mutableStateOf(false)
+        private set
+
+    // Brush radius as a fraction of the eye-half's height, changed with the mouse wheel while the
+    // tool is active. Deliberately not cleared by resetAll, so the chosen size survives across photos.
+    var copyBrushRadius by mutableStateOf(0.04f)
+        private set
+
+    val copyFromImageMode: Boolean get() = copyDirection != null
+
+    /** True once both alignment points are set - the "Copy from image" tool then paints instead of placing points. */
+    val copyPaintingPhase: Boolean get() = copyFromImageMode && copyAlignLeftPoint != null && copyAlignRightPoint != null
+
+    /** The mutual-exclusion guard [startManualAlign]/[startCrop]/[startSpotIssues]/[startClickAlign]/[startCopyFromImage] all share. */
+    val anyToolActive: Boolean get() = manualAlignMode || cropMode || spotIssuesMode || clickAlignMode || copyFromImageMode
 
     /** Clears every tool's pending state - called on every navigation so nothing carries over onto a different photo. */
     fun resetAll() {
@@ -111,6 +141,11 @@ class PhotoToolsState {
         clickAlignRightPoint = null
         clickAlignPreviewActive = false
         clickAlignPreview = null
+        copyDirection = null
+        copyAlignLeftPoint = null
+        copyAlignRightPoint = null
+        copyMask = null
+        copyUnalignedPreview = false
     }
 
     /** Applies a finished auto-align/correct-zoom attempt's result - see AppViewModel.performAutoAlign. */
@@ -211,4 +246,42 @@ class PhotoToolsState {
     fun applyClickAlignPreview(preview: ClickAlign.Preview?) {
         clickAlignPreview = preview
     }
+
+    /** Enters the "Copy from image" tool for the currently shown photo - see AlignButtonsRow's "Copy from image" submenu. */
+    fun startCopyFromImage(direction: CopyDirection) {
+        if (anyToolActive) return
+        alignedPreview = null
+        pendingAlignKind = null
+        copyDirection = direction
+        copyAlignLeftPoint = null
+        copyAlignRightPoint = null
+        copyMask = null
+        copyUnalignedPreview = false
+    }
+
+    /** Records/moves an alignment point during the tool's first phase - same overwrite semantics as [setClickAlignPoint]. */
+    fun setCopyAlignPoint(isLeft: Boolean, point: PointFraction) {
+        if (!copyFromImageMode || copyPaintingPhase) return
+        if (isLeft) copyAlignLeftPoint = point else copyAlignRightPoint = point
+    }
+
+    /** Paints one brush segment into the target eye-half's mask - see CopyFromImageMask.stamp. */
+    fun paintCopyStroke(eyeWidth: Int, eyeHeight: Int, from: PointFraction?, to: PointFraction) {
+        if (!copyPaintingPhase) return
+        val mask = copyMask ?: CopyFromImageMask(eyeWidth, eyeHeight).also { copyMask = it }
+        mask.stamp(from, to, copyBrushRadius)
+    }
+
+    /** Mouse-wheel brush resizing: [factor] > 1 grows the brush. */
+    fun scaleCopyBrush(factor: Float) {
+        copyBrushRadius = (copyBrushRadius * factor).coerceIn(0.005f, 0.3f)
+    }
+
+    /** Toggled by Main.kt's onPreviewKeyEvent while Shift is held during the painting phase. */
+    fun updateCopyUnalignedPreview(active: Boolean) {
+        copyUnalignedPreview = active
+    }
+
+    /** Discards the "Copy from image" tool (points/painting or not) without touching disk. */
+    fun cancelCopyFromImage() = resetAll()
 }

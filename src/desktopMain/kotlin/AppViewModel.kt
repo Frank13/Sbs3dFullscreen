@@ -652,6 +652,54 @@ class AppViewModel(initialFile: File?) {
         runSave("click_align_save", afterAttempt = photoTools::cancelClickAlign) { ClickAlign.saveClickAlign(it, left, right) }
     }
 
+    /** Enters the "Copy from image" tool for the currently shown photo - see AlignButtonsRow's "Copy from image" submenu. */
+    fun startCopyFromImage(direction: CopyDirection) {
+        if (!canEditPhotos) return
+        photoTools.startCopyFromImage(direction)
+    }
+
+    /** Records/moves an alignment point during the tool's first phase - see ImageScreen's onRawClick wiring. */
+    fun setCopyAlignPoint(isLeft: Boolean, point: PointFraction) {
+        photoTools.setCopyAlignPoint(isLeft, point)
+    }
+
+    /** One brush segment during the painting phase - see ImageScreen's onRectDragChange wiring. */
+    fun paintCopyStroke(eyeWidth: Int, eyeHeight: Int, from: PointFraction?, to: PointFraction) {
+        photoTools.paintCopyStroke(eyeWidth, eyeHeight, from, to)
+    }
+
+    /** Mouse-wheel brush resizing - see ImageScreen's onScroll wiring. */
+    fun scaleCopyBrush(factor: Float) {
+        photoTools.scaleCopyBrush(factor)
+    }
+
+    /** Toggled by Main.kt's onPreviewKeyEvent while Shift is held during the painting phase. */
+    fun setCopyUnalignedPreview(active: Boolean) {
+        photoTools.updateCopyUnalignedPreview(active)
+    }
+
+    /** Discards the "Copy from image" tool without touching disk. */
+    fun cancelCopyFromImage() {
+        photoTools.cancelCopyFromImage()
+    }
+
+    /**
+     * Writes the painted pixels to disk via [CopyFromImage.saveCopyFromImage] - the alignment used
+     * while painting is dropped, so both eye-halves keep their original framing - then inserts the
+     * new file right after the current one and jumps to it, same treatment as [performSaveClickAlign].
+     */
+    suspend fun performSaveCopyFromImage() {
+        if (isAligning || !photoTools.copyPaintingPhase) return
+        val direction = photoTools.copyDirection ?: return
+        val left = photoTools.copyAlignLeftPoint ?: return
+        val right = photoTools.copyAlignRightPoint ?: return
+        val mask = photoTools.copyMask ?: return
+        val params = mapOf("direction" to direction.name.lowercase())
+        runSave("copy_from_image_save", params, afterAttempt = photoTools::cancelCopyFromImage) {
+            CopyFromImage.saveCopyFromImage(it, direction, left, right, mask)
+        }
+    }
+
     /**
      * Runs auto-align/correct-zoom for [file] on a background thread (rather than blocking the UI
      * thread like the old synchronous call did) and applies the result when done. [isAligning]
@@ -945,6 +993,8 @@ class AppViewModel(initialFile: File?) {
         screen = when {
             playlistEditor.editing != null -> Screen.PlaylistEdit
             gallery.enteredFromGallery -> {
+                // Picks up files saved/deleted while in ImageView - see GalleryState.refresh.
+                gallery.refresh()
                 gallery.markReturnedTo(currentImage)
                 Screen.Gallery
             }

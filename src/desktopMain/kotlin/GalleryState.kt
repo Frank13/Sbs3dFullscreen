@@ -79,6 +79,22 @@ class GalleryState {
         selectedFiles = emptySet()
     }
 
+    /**
+     * Re-scans [root] so files saved (a Save in any ImageView edit tool) or deleted while in
+     * ImageView show up/disappear here - [open]'s scan is otherwise never repeated. Groups the
+     * user had collapsed stay collapsed; groups that didn't exist before start expanded, like in
+     * [open].
+     */
+    fun refresh() {
+        val folder = root ?: return
+        val previousPaths = groups.map { it.relativePath }.toSet()
+        val scanned = scanGalleryDirectory(folder)
+        groups = scanned
+        expandedGroups = scanned.map { it.relativePath }
+            .filter { it in expandedGroups || it !in previousPaths }
+            .toSet()
+    }
+
     fun close() {
         root = null
         groups = emptyList()

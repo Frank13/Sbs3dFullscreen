@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -82,6 +83,12 @@ import sbs3dViewer.resources.align_manual_align_keyboard_option
 import sbs3dViewer.resources.align_save_button
 import sbs3dViewer.resources.cancel_button
 import sbs3dViewer.resources.click_align_preview_hint
+import sbs3dViewer.resources.copy_from_image_button
+import sbs3dViewer.resources.copy_from_image_left_to_right_option
+import sbs3dViewer.resources.copy_from_image_paint_left_toast
+import sbs3dViewer.resources.copy_from_image_paint_right_toast
+import sbs3dViewer.resources.copy_from_image_points_toast
+import sbs3dViewer.resources.copy_from_image_right_to_left_option
 import sbs3dViewer.resources.correct_zoom_finished_success
 import sbs3dViewer.resources.crop_button
 import sbs3dViewer.resources.delete_button
@@ -115,12 +122,16 @@ import sbs3dViewer.resources.stereo_issue_warning_comment_hint
 import sbs3dViewer.resources.stereo_issue_warning_comment_title
 import sbs3dViewer.resources.stereo_issue_warning_comment_will_be_erased
 import java.io.File
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 // Same sign convention as Playlist's titleZPercent/subtitleZPercent (negative = toward the
 // viewer): -1% makes the panel read as floating just in front of the screen rather than behind it.
 private const val InfoPanelShiftPercent = -0.01f
 private val ToastDuration = 3000.milliseconds
+// Longer than ToastDuration: the "Copy from image" guide toasts are full instructions to read, not
+// a one-word confirmation.
+private val GuideToastDuration = 6000.milliseconds
 private val WarningColor = Color(0xFFFF9800)
 private val OutlinedColor = Color(0xFF9E9E9E)
 private val IconTextSpacing = 6.dp
@@ -231,11 +242,23 @@ fun InfoPanel(
     // onStartManualAlignFromSubmenu/onStartClickAlignFromSubmenu below the moment either choice is
     // picked, so it never reopens already-expanded next time the tool is started fresh.
     var manualAlignSubmenuExpanded by remember(file) { mutableStateOf(false) }
-    val onManualAlignSubmenuToggle: () -> Unit = { manualAlignSubmenuExpanded = !manualAlignSubmenuExpanded }
+    // Same hoisting for the "Copy from image" button's two directions. Opening one submenu closes
+    // the other so only one dropdown is ever shown under the row.
+    var copySubmenuExpanded by remember(file) { mutableStateOf(false) }
+    val onManualAlignSubmenuToggle: () -> Unit = {
+        manualAlignSubmenuExpanded = !manualAlignSubmenuExpanded
+        copySubmenuExpanded = false
+    }
+    val onCopySubmenuToggle: () -> Unit = {
+        copySubmenuExpanded = !copySubmenuExpanded
+        manualAlignSubmenuExpanded = false
+    }
     val halfActions = actions.copy(
         onStartManualAlign = { manualAlignSubmenuExpanded = false; actions.onStartManualAlign() },
         onStartClickAlign = { manualAlignSubmenuExpanded = false; actions.onStartClickAlign() },
+        onStartCopyFromImage = { copySubmenuExpanded = false; actions.onStartCopyFromImage(it) },
     )
+    val submenus = ToolSubmenus(manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, copySubmenuExpanded, onCopySubmenuToggle)
 
     // An unedited stereo pair (GalleryScreen.kt's rawEditedLabel == "raw") gets a 3-way delete
     // choice (keep left eye as 2D / keep right eye as 2D / delete completely) instead of a plain
@@ -271,10 +294,10 @@ fun InfoPanel(
             val shift = halfWidth * InfoPanelShiftPercent
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, halfActions, onDeleteRequest, showEditTools)
+                    InfoPanelHalf(file, summary, offsetX = -shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, submenus, halfActions, onDeleteRequest, showEditTools)
                 }
                 Box(Modifier.fillMaxSize().weight(1f)) {
-                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, halfActions, onDeleteRequest, showEditTools)
+                    InfoPanelHalf(file, summary, offsetX = shift / 2, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, submenus, halfActions, onDeleteRequest, showEditTools)
                 }
             }
         }
@@ -510,8 +533,7 @@ private fun InfoPanelHalf(
     onWarningToggleRequest: (Boolean) -> Unit,
     onLegendClick: () -> Unit,
     tools: PhotoToolsUiState,
-    manualAlignSubmenuExpanded: Boolean,
-    onManualAlignSubmenuToggle: () -> Unit,
+    submenus: ToolSubmenus,
     actions: PhotoToolActions,
     onDeleteRequest: () -> Unit,
     showEditTools: Boolean,
@@ -543,24 +565,37 @@ private fun InfoPanelHalf(
                 if (!tools.anyToolActive) {
                     InfoPanelContent(summary, onToggleFavorite, onWarningToggleRequest, onLegendClick)
                 }
-                if (showEditTools) AlignButtonsRow(shrinkControls, tools, manualAlignSubmenuExpanded, onManualAlignSubmenuToggle, actions, onDeleteRequest)
+                if (showEditTools) AlignButtonsRow(shrinkControls, tools, submenus, actions, onDeleteRequest)
                 ShadowedText(file.name, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
 }
 
+/** Open/closed state of AlignButtonsRow's two dropdown buttons ("Manual Align" and "Copy from image"), hoisted in InfoPanel. */
+private data class ToolSubmenus(
+    val manualAlignExpanded: Boolean,
+    val onManualAlignToggle: () -> Unit,
+    val copyExpanded: Boolean,
+    val onCopyToggle: () -> Unit,
+)
+
 @Composable
 private fun AlignButtonsRow(
     shrinkControls: Boolean,
     tools: PhotoToolsUiState,
-    manualAlignSubmenuExpanded: Boolean,
-    onManualAlignSubmenuToggle: () -> Unit,
+    submenus: ToolSubmenus,
     actions: PhotoToolActions,
     onDeleteRequest: () -> Unit,
 ) = with(actions) {
     val (hasAlignedPreview, isAligning, manualAlignMode, hasManualOffset, cropMode, hasCropRect,
         spotIssuesMode, hasSpotIssueRects, clickAlignMode, hasClickAlignPoints) = tools
+    val copyFromImageMode = tools.copyFromImageMode
+    val hasCopyPainting = tools.hasCopyPainting
+    val manualAlignSubmenuExpanded = submenus.manualAlignExpanded
+    val onManualAlignSubmenuToggle = submenus.onManualAlignToggle
+    val copySubmenuExpanded = submenus.copyExpanded
+    val onCopySubmenuToggle = submenus.onCopyToggle
     // Material3's default disabled Button colors (a low-alpha tint of MaterialTheme's onSurface,
     // meant for a light/dark *theme surface* background) go nearly invisible against this panel's
     // own Color.Black.copy(alpha = 0.5f) background - MaterialTheme here is the default light
@@ -584,6 +619,7 @@ private fun AlignButtonsRow(
     // hugging its own (often narrower) row text - see its doc.
     val density = LocalDensity.current
     var manualAlignButtonWidth by remember { mutableStateOf(0.dp) }
+    var copyButtonWidth by remember { mutableStateOf(0.dp) }
     // The "no tool active" buttons (Auto Align/Correct Zoom/Manual Align/Crop/Spot stereo
     // issues/Delete) all additionally hide while the "Manual Align" submenu is expanded - the row
     // would otherwise show a confusing mix of the submenu's own two choices sitting alongside a
@@ -592,8 +628,8 @@ private fun AlignButtonsRow(
     // once [hasAlignedPreview] is true (an auto-align/correct-zoom result is pending review) -
     // that state gets its own Cancel/Save pair below, same "only the two relevant buttons" idiom as
     // clickAlignMode/cropMode/spotIssuesMode/manualAlignMode.
-    val hideOtherButtons = !manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode &&
-        !manualAlignSubmenuExpanded && !hasAlignedPreview
+    val noToolActive = !manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !copyFromImageMode && !hasAlignedPreview
+    val hideOtherButtons = noToolActive && !manualAlignSubmenuExpanded && !copySubmenuExpanded
     Column {
         // FlowRow (not Row) + widthIn(max = ...) so this wraps onto multiple lines instead of
         // overflowing/clipping past the panel's edge - there are up to 6 buttons in the "no tool
@@ -636,7 +672,7 @@ private fun AlignButtonsRow(
             // choices - keyboard nudge vs. click matching points (see ClickAlign.kt) - rather than
             // starting a tool directly. The chevron (flipped while open) is the same "this expands"
             // affordance a standard dropdown uses, so it doesn't read as just another action button.
-            if (!manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !hasAlignedPreview) {
+            if (noToolActive && !copySubmenuExpanded) {
                 Button(
                     onClick = onManualAlignSubmenuToggle,
                     enabled = !isAligning,
@@ -760,6 +796,48 @@ private fun AlignButtonsRow(
                 Text(stringResource(Res.string.align_save_button), fontSize = buttonFontSize)
             }
         }
+        // "Copy from image" opens its own dropdown (left to right / right to left), same affordance
+        // and same "other buttons hide while it's open" behavior as "Manual Align" above.
+        if (noToolActive && !manualAlignSubmenuExpanded) {
+            Button(
+                onClick = onCopySubmenuToggle,
+                enabled = !isAligning,
+                colors = panelButtonColors,
+                modifier = Modifier.focusProperties { canFocus = false }
+                    .cursor3DClickTarget { if (!isAligning) onCopySubmenuToggle() }
+                    .onSizeChanged { copyButtonWidth = with(density) { it.width.toDp() } },
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(Res.string.copy_from_image_button), fontSize = buttonFontSize)
+                    Icon(
+                        imageVector = if (copySubmenuExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                        contentDescription = null,
+                    )
+                }
+            }
+        }
+        // Cancel/Save pair for "Copy from image" - Save is only enabled once something has been
+        // painted (see PhotoToolsState.copyMask), same "nothing to commit yet" gating as the others.
+        if (copyFromImageMode) {
+            Button(
+                onClick = onCancelCopyFromImage,
+                enabled = !isAligning,
+                colors = panelButtonColors,
+                modifier = Modifier.focusProperties { canFocus = false }
+                    .cursor3DClickTarget { if (!isAligning) onCancelCopyFromImage() },
+            ) {
+                Text(stringResource(Res.string.cancel_button), fontSize = buttonFontSize)
+            }
+            Button(
+                onClick = onSaveCopyFromImage,
+                enabled = hasCopyPainting && !isAligning,
+                colors = panelButtonColors,
+                modifier = Modifier.focusProperties { canFocus = false }
+                    .cursor3DClickTarget { if (hasCopyPainting && !isAligning) onSaveCopyFromImage() },
+            ) {
+                Text(stringResource(Res.string.align_save_button), fontSize = buttonFontSize)
+            }
+        }
         if (hideOtherButtons) {
             Button(
                 onClick = onStartSpotIssues,
@@ -820,6 +898,16 @@ private fun AlignButtonsRow(
                 }
                 ManualAlignSubmenuRow(stringResource(Res.string.align_manual_align_click_option), shrinkControls) {
                     onStartClickAlign()
+                }
+            }
+        }
+        if (copySubmenuExpanded) {
+            ManualAlignSubmenuPanel(copyButtonWidth) {
+                ManualAlignSubmenuRow(stringResource(Res.string.copy_from_image_left_to_right_option), shrinkControls) {
+                    onStartCopyFromImage(CopyDirection.LEFT_TO_RIGHT)
+                }
+                ManualAlignSubmenuRow(stringResource(Res.string.copy_from_image_right_to_left_option), shrinkControls) {
+                    onStartCopyFromImage(CopyDirection.RIGHT_TO_LEFT)
                 }
             }
         }
@@ -1048,7 +1136,12 @@ private fun ShadowedText(text: String, modifier: Modifier = Modifier) {
  * re-flashes the toast even if the outcome is the same as last time (e.g. two failures in a row).
  */
 @Composable
-private fun <T : Any> StereoToast(trigger: T?, shiftPercent: Float = InfoPanelShiftPercent, content: @Composable () -> Unit) {
+private fun <T : Any> StereoToast(
+    trigger: T?,
+    shiftPercent: Float = InfoPanelShiftPercent,
+    duration: Duration = ToastDuration,
+    content: @Composable () -> Unit,
+) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(trigger) {
         if (trigger == null) {
@@ -1056,7 +1149,7 @@ private fun <T : Any> StereoToast(trigger: T?, shiftPercent: Float = InfoPanelSh
             return@LaunchedEffect
         }
         visible = true
-        delay(ToastDuration)
+        delay(duration)
         visible = false
     }
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
@@ -1176,6 +1269,27 @@ fun ShareResultToast(toast: ShareToast?, shiftPercent: Float = InfoPanelShiftPer
 fun NotLikely3DToast(trigger: Int, shiftPercent: Float = InfoPanelShiftPercent) {
     StereoToast(trigger = trigger.takeIf { it != 0 }, shiftPercent = shiftPercent) {
         Text(stringResource(Res.string.image_likely_not_3d_toast), color = WarningColor, fontSize = 18.sp)
+    }
+}
+
+/** Which instruction [CopyFromImageGuideToast] shows - one per phase of the "Copy from image" tool. */
+enum class CopyFromImageGuide { PICK_POINTS, PAINT_LEFT_TO_RIGHT, PAINT_RIGHT_TO_LEFT }
+
+/**
+ * Guides the user through the "Copy from image" tool: flashed when the tool starts (pick the two
+ * alignment points) and again once both points are set (paint, Shift to preview). [guide] is the
+ * current phase, null while the tool is off - a phase change re-flashes the toast, and null hides
+ * it at once (Cancel/Save). Same hosting rationale as [ExifUpdatedToast].
+ */
+@Composable
+fun CopyFromImageGuideToast(guide: CopyFromImageGuide?, shiftPercent: Float = InfoPanelShiftPercent) {
+    StereoToast(trigger = guide, shiftPercent = shiftPercent, duration = GuideToastDuration) {
+        val message = when (guide) {
+            CopyFromImageGuide.PAINT_LEFT_TO_RIGHT -> Res.string.copy_from_image_paint_right_toast
+            CopyFromImageGuide.PAINT_RIGHT_TO_LEFT -> Res.string.copy_from_image_paint_left_toast
+            else -> Res.string.copy_from_image_points_toast
+        }
+        Text(stringResource(message), color = Color.White, fontSize = 18.sp, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 480.dp))
     }
 }
 

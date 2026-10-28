@@ -367,6 +367,7 @@ private fun runApp(args: Array<String>) = application {
                                             tools.cropMode -> viewModel::cancelCrop
                                             tools.spotIssuesMode -> viewModel::cancelSpotIssues
                                             tools.clickAlignMode -> viewModel::cancelClickAlign
+                                            tools.copyFromImageMode -> viewModel::cancelCopyFromImage
                                             else -> null
                                         }
                                         if (imageDialogShown) {
@@ -399,6 +400,17 @@ private fun runApp(args: Array<String>) = application {
                                                     when (event.type) {
                                                         KeyEventType.KeyDown -> viewModel.setClickAlignPreviewActive(true)
                                                         KeyEventType.KeyUp -> viewModel.setClickAlignPreviewActive(false)
+                                                        else -> {}
+                                                    }
+                                                    true
+                                                }
+                                                // Same Shift-held repurposing for "Copy from image": while
+                                                // held, the alignment is dropped to preview the result as
+                                                // it will be saved (see PhotoToolsState.copyUnalignedPreview).
+                                                tools.copyFromImageMode && event.key.isShift -> {
+                                                    when (event.type) {
+                                                        KeyEventType.KeyDown -> viewModel.setCopyUnalignedPreview(true)
+                                                        KeyEventType.KeyUp -> viewModel.setCopyUnalignedPreview(false)
                                                         else -> {}
                                                     }
                                                     true
@@ -692,6 +704,12 @@ private fun runApp(args: Array<String>) = application {
                                                     clickAlignRightPoint = viewModel.photoTools.clickAlignRightPoint,
                                                     clickAlignPreviewActive = viewModel.photoTools.clickAlignPreviewActive,
                                                     clickAlignPreview = viewModel.photoTools.clickAlignPreview,
+                                                    copyDirection = viewModel.photoTools.copyDirection,
+                                                    copyAlignLeftPoint = viewModel.photoTools.copyAlignLeftPoint,
+                                                    copyAlignRightPoint = viewModel.photoTools.copyAlignRightPoint,
+                                                    copyMask = viewModel.photoTools.copyMask,
+                                                    copyUnalignedPreview = viewModel.photoTools.copyUnalignedPreview,
+                                                    copyBrushRadius = viewModel.photoTools.copyBrushRadius,
                                                     pendingNavigation = viewModel.pendingNavigation,
                                                     onConfirmSaveAlignedAndNavigate = {
                                                         coroutineScope.launch { viewModel.confirmSaveAlignedAndNavigate() }
@@ -734,6 +752,12 @@ private fun runApp(args: Array<String>) = application {
                                                         onCancelClickAlign = viewModel::cancelClickAlign,
                                                         onSaveClickAlign = { coroutineScope.launch { viewModel.performSaveClickAlign() } },
                                                         onRequestClickAlignPreview = { coroutineScope.launch { viewModel.refreshClickAlignPreview() } },
+                                                        onStartCopyFromImage = viewModel::startCopyFromImage,
+                                                        onCopyAlignPointSet = viewModel::setCopyAlignPoint,
+                                                        onCopyPaintStroke = viewModel::paintCopyStroke,
+                                                        onScaleCopyBrush = viewModel::scaleCopyBrush,
+                                                        onCancelCopyFromImage = viewModel::cancelCopyFromImage,
+                                                        onSaveCopyFromImage = { coroutineScope.launch { viewModel.performSaveCopyFromImage() } },
                                                         onDeleteCurrentImage = { coroutineScope.launch { viewModel.performDeleteCurrentImage() } },
                                                         onDeleteKeepingLeft = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) } },
                                                         onDeleteKeepingRight = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) } },

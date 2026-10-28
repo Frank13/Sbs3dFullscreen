@@ -127,6 +127,12 @@
     <string name="align_manual_align_keyboard_option">Clavier</string>
     <string name="align_manual_align_click_option">Cliquer sur des points identiques</string>
     <string name="click_align_preview_hint">Maintenez Maj enfoncé pour voir l'aperçu</string>
+    <string name="copy_from_image_button">Copier depuis l'image</string>
+    <string name="copy_from_image_left_to_right_option">De gauche à droite</string>
+    <string name="copy_from_image_right_to_left_option">De droite à gauche</string>
+    <string name="copy_from_image_points_toast">Alignez les arrière-plans des zones à copier en cliquant sur des points homologues des images gauche et droite</string>
+    <string name="copy_from_image_paint_right_toast">Cliquez sur l'image droite pour remplacer ce qui est sous le curseur. Maintenez Maj pour l'aperçu. Molette : taille du pinceau</string>
+    <string name="copy_from_image_paint_left_toast">Cliquez sur l'image gauche pour remplacer ce qui est sous le curseur. Maintenez Maj pour l'aperçu. Molette : taille du pinceau</string>
     <string name="align_save_button">Enregistrer</string>
     <string name="crop_button">Rogner</string>
     <string name="spot_stereo_issues_button">Repérer les problèmes stéréo</string>
