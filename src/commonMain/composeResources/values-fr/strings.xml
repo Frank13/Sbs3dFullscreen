@@ -196,6 +196,7 @@
     <string name="vlc_missing_message">SBS 3D Viewer a besoin du lecteur multimédia VLC pour lire les vidéos et la musique, et VLC est introuvable sur cet ordinateur. Veuillez l'installer, puis réessayer.</string>
     <string name="vlc_missing_download">Télécharger VLC</string>
     <string name="vlc_missing_dismiss">Fermer</string>
+    <string name="vlc_missing_welcome_banner">Installez VLC pour activer la lecture de la musique et des vidéos</string>
     <string name="opening_fullscreen_message">Ouverture du plein écran…</string>
     <string name="copying_files_message">Copie des fichiers…</string>
     <string name="about_link_label">À propos de SBS 3D Viewer</string>

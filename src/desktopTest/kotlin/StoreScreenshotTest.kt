@@ -106,6 +106,7 @@ class StoreScreenshotTest {
                 onShrinkControlsChosen = {},
                 // Forced on: the test doesn't run inside the MSIX package, but Store users do.
                 initialShowDesktopShortcutButton = true,
+                isVlcInstalled = { true },
             )
         }
     }

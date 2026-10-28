@@ -26,6 +26,38 @@ import sbs3dViewer.resources.vlc_missing_dismiss
 import sbs3dViewer.resources.vlc_missing_download
 import sbs3dViewer.resources.vlc_missing_message
 import sbs3dViewer.resources.vlc_missing_title
+import sbs3dViewer.resources.vlc_missing_welcome_banner
+
+/** Permanent Welcome-screen notice shown while VLC isn't installed, with a link to download it. */
+@Composable
+fun VlcMissingBanner(modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
+    Surface(modifier = modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.errorContainer) {
+        Row(
+            Modifier.padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onError,
+                    modifier = Modifier.padding(6.dp).size(18.dp),
+                )
+            }
+            Text(
+                stringResource(Res.string.vlc_missing_welcome_banner),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(onClick = {
+                uriHandler.openUri(Vlc.DownloadUrl)
+                Analytics.logEvent("vlc_download_clicked", mapOf("source" to "welcome_banner"))
+            }) { Text(stringResource(Res.string.vlc_missing_download)) }
+        }
+    }
+}
 
 /** Explains that VLC is required for videos and music, with a link to download it - see AppViewModel.requireVlc. */
 @OptIn(ExperimentalMaterial3Api::class)

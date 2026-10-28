@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +94,8 @@ fun WelcomeScreen(
     onOpenAbout: () -> Unit,
     // Overridable so the Store screenshot test can show the button outside the MSIX package.
     initialShowDesktopShortcutButton: Boolean = DesktopShortcut.isAvailable && !DesktopShortcut.exists(),
+    // Overridable so the Store screenshot test never shows the VLC-missing banner.
+    isVlcInstalled: () -> Boolean = Vlc::isInstalled,
 ) {
     val dialogTitle = stringResource(Res.string.file_dialog_title)
     val playlistDialogTitle = stringResource(Res.string.playlist_dialog_title)
@@ -102,6 +105,10 @@ fun WelcomeScreen(
     // Re-checked each time the welcome screen is shown, so deleting the shortcut brings the button back.
     var showDesktopShortcutButton by remember { mutableStateOf(initialShowDesktopShortcutButton) }
     var showShortcutFailed by remember { mutableStateOf(false) }
+    // Re-checked each time the welcome screen is shown (so installing VLC meanwhile hides the banner),
+    // off the UI thread since Vlc.isInstalled spawns a `reg query`. Null until the check completes.
+    var vlcInstalled by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) { vlcInstalled = withContext(Dispatchers.IO) { isVlcInstalled() } }
     val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -184,6 +191,14 @@ fun WelcomeScreen(
             ) {
                 Text(stringResource(Res.string.welcome_desktop_shortcut_button))
             }
+        }
+
+        if (vlcInstalled == false) {
+            VlcMissingBanner(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp),
+            )
         }
 
         if (showSettings) {
