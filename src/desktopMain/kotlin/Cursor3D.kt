@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -387,6 +388,9 @@ fun Stereo3DCursorHost(
     // while the click-align tool is active, so the cursor matches the 0%-depth image/crosshairs it's
     // hovering there even when "shrink controls" itself is off.
     useDepthRegistry: Boolean = shrinkControls,
+    // Draws the cursor dots as a hollow white ring instead of a filled disc - see ImageScreen.kt's
+    // alignment tools, where a filled dot would hide the exact image detail being lined up.
+    outlineOnly: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val registry = remember { CursorHitRegistry() }
@@ -563,7 +567,7 @@ fun Stereo3DCursorHost(
                     // register unconditionally (harmless either way, same rationale as
                     // cursor3DClickTarget's callers), so gating happens here instead.
                     val hoverShiftPercent = (if (useDepthRegistry) depthRegistry.hitTest(pos) else null) ?: CursorShiftPercent
-                    StereoCursorOverlay(pos, halfWidthDp, shrinkControls, hoverShiftPercent)
+                    StereoCursorOverlay(pos, halfWidthDp, shrinkControls, hoverShiftPercent, outlineOnly)
                 }
             }
         }
@@ -571,26 +575,36 @@ fun Stereo3DCursorHost(
 }
 
 @Composable
-private fun StereoCursorOverlay(localPos: Offset, halfWidthDp: Dp, shrinkControls: Boolean, shiftPercent: Float) {
+private fun StereoCursorOverlay(localPos: Offset, halfWidthDp: Dp, shrinkControls: Boolean, shiftPercent: Float, outlineOnly: Boolean) {
     val shift = halfWidthDp * shiftPercent
     val density = LocalDensity.current
     val xDp = with(density) { localPos.x.toDp() }
     val yDp = with(density) { localPos.y.toDp() }
     Row(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().weight(1f).clipToBounds()) { CursorDot(xDp - shift / 2, yDp, shrinkControls) }
-        Box(Modifier.fillMaxSize().weight(1f).clipToBounds()) { CursorDot(xDp + shift / 2, yDp, shrinkControls) }
+        Box(Modifier.fillMaxSize().weight(1f).clipToBounds()) { CursorDot(xDp - shift / 2, yDp, shrinkControls, outlineOnly) }
+        Box(Modifier.fillMaxSize().weight(1f).clipToBounds()) { CursorDot(xDp + shift / 2, yDp, shrinkControls, outlineOnly) }
     }
 }
 
 @Composable
-private fun CursorDot(xDp: Dp, yDp: Dp, shrinkControls: Boolean) {
+private fun CursorDot(xDp: Dp, yDp: Dp, shrinkControls: Boolean, outlineOnly: Boolean) {
+    val base = Modifier
+        .offset(x = xDp - CursorRadius, y = yDp - CursorRadius)
+        .size(CursorRadius * 2)
+        .shrinkHorizontally(shrinkControls, TransformOrigin.Center)
+        .clip(CircleShape)
     Box(
-        Modifier
-            .offset(x = xDp - CursorRadius, y = yDp - CursorRadius)
-            .size(CursorRadius * 2)
-            .shrinkHorizontally(shrinkControls, TransformOrigin.Center)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.9f))
-            .border(1.5.dp, Color.Black.copy(alpha = 0.8f), CircleShape),
+        if (outlineOnly) {
+            // Dark outer ring with the white ring inset inside it (padding draws the second
+            // border within the first), so the cursor stays visible on bright areas too.
+            base
+                .border(1.dp, Color.Black.copy(alpha = 0.8f), CircleShape)
+                .padding(1.dp)
+                .border(1.5.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+        } else {
+            base
+                .background(Color.White.copy(alpha = 0.9f))
+                .border(1.5.dp, Color.Black.copy(alpha = 0.8f), CircleShape)
+        },
     )
 }

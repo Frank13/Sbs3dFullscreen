@@ -380,6 +380,7 @@ fun ImageScreen(
             // active, so the cursor matches the 0%-depth image/crosshairs it's hovering (see the
             // .cursor3DDepthTarget(0f) below) instead of always floating at the default -1%.
             useDepthRegistry = shrinkControls || clickAlignMode || copyMode,
+            outlineOnly = manualAlignMode || clickAlignMode || copyPickingPoints,
             // Aliases the mouse wheel to the Next/Previous arrow keys (see Main.kt's
             // onPreviewKeyEvent), same "backward" = forward-in-time convention as scrolling down a
             // list: scrolling backward/down (positive delta) advances to the next image, scrolling
