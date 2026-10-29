@@ -147,7 +147,7 @@ fun WelcomeScreen(
             }
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
-                val chooser = JFileChooser()
+                val chooser = newFileChooser()
                 chooser.dialogTitle = playlistDialogTitle
                 chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
                 if (chooser.showOpenDialog(window) == JFileChooser.APPROVE_OPTION) {

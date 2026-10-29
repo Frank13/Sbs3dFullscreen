@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.util.prefs.Preferences
 import javax.imageio.ImageIO
+import javax.swing.Icon
 import javax.swing.ImageIcon
 import javax.swing.JFileChooser
 import javax.swing.JLabel
@@ -11,6 +12,7 @@ import javax.swing.JPanel
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 import javax.swing.filechooser.FileNameExtensionFilter
+import javax.swing.filechooser.FileSystemView
 
 /**
  * Multi-select file picker for the given extensions.
@@ -31,7 +33,7 @@ fun chooseMusicFiles(window: java.awt.Window, title: String, extensions: Array<S
     chooseFiles(window, title, extensions, lastMusicDirectory)
 
 private fun chooseFiles(window: java.awt.Window, title: String, extensions: Array<String>, directory: LastDirectoryPreference): List<File> {
-    val chooser = JFileChooser(directory.getOrDefault())
+    val chooser = newFileChooser(directory.getOrDefault())
     chooser.dialogTitle = title
     chooser.isMultiSelectionEnabled = true
     chooser.fileFilter = FileNameExtensionFilter(extensions.joinToString(", ") { "*.$it" }, *extensions)
@@ -50,12 +52,68 @@ private fun chooseFiles(window: java.awt.Window, title: String, extensions: Arra
  * folder chosen independently of [chooseFiles]'s own memory.
  */
 fun chooseDirectory(window: java.awt.Window, title: String): File? {
-    val chooser = JFileChooser(lastGalleryDirectory.getOrDefault())
+    val chooser = newFileChooser(lastGalleryDirectory.getOrDefault())
     chooser.dialogTitle = title
     chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
     val approved = chooser.showOpenDialog(window) == JFileChooser.APPROVE_OPTION
     lastGalleryDirectory.save(chooser.selectedFile ?: chooser.currentDirectory)
     return if (approved) chooser.selectedFile else null
+}
+
+/** Every JFileChooser in the app must be created through this, see [SafeFileSystemView]. */
+fun newFileChooser(directory: File? = null): JFileChooser = JFileChooser(directory, SafeFileSystemView)
+
+/**
+ * JFileChooser's default Windows FileSystemView goes through sun.awt.shell.Win32ShellFolder2 (COM
+ * IShellFolder), which throws `InternalError: Unable to bind <folder> to parent` for folders the
+ * shell can't bind (a known JDK bug, seen in production on a Desktop folder), killing the
+ * chooser's loader thread. This view lists real folders with plain java.io instead - so the
+ * entries are never ShellFolders - and only keeps the shell for virtual folders (This PC, ...),
+ * with every remaining shell call falling back to a plain java.io answer on InternalError.
+ * Being a non-default view also makes Swing's FilePane/combo box skip their own ShellFolder use.
+ * Trade-off: Windows .lnk shortcuts show as plain files instead of navigable folders.
+ */
+private object SafeFileSystemView : FileSystemView() {
+    private val shell: FileSystemView = getFileSystemView()
+
+    private inline fun <T> safe(fallback: () -> T, block: () -> T): T =
+        try {
+            block()
+        } catch (_: InternalError) {
+            fallback()
+        }
+
+    override fun getFiles(dir: File?, useFileHiding: Boolean): Array<File> {
+        if (dir == null) return emptyArray()
+        if (!safe({ true }) { shell.isFileSystem(dir) }) {
+            return safe({ emptyArray() }) { shell.getFiles(dir, useFileHiding) }
+        }
+        val files = File(dir.path).listFiles() ?: return emptyArray()
+        return if (useFileHiding) files.filterNot { it.isHidden }.toTypedArray() else files
+    }
+
+    override fun createNewFolder(containingDir: File?): File? = shell.createNewFolder(containingDir)
+    override fun isRoot(f: File?): Boolean = safe({ false }) { shell.isRoot(f) }
+    override fun isTraversable(f: File?): Boolean? = safe({ f?.isDirectory }) { shell.isTraversable(f) }
+    override fun getSystemDisplayName(f: File?): String? = safe({ f?.name }) { shell.getSystemDisplayName(f) }
+    override fun getSystemTypeDescription(f: File?): String? = safe({ null }) { shell.getSystemTypeDescription(f) }
+    override fun getSystemIcon(f: File?): Icon? = safe({ null }) { shell.getSystemIcon(f) }
+    override fun isParent(folder: File?, file: File?): Boolean = safe({ file?.parentFile == folder }) { shell.isParent(folder, file) }
+    override fun getChild(parent: File?, fileName: String?): File? = safe({ File(parent, fileName) }) { shell.getChild(parent, fileName) }
+    override fun isFileSystem(f: File?): Boolean = safe({ true }) { shell.isFileSystem(f) }
+    override fun isHiddenFile(f: File?): Boolean = safe({ f?.isHidden == true }) { shell.isHiddenFile(f) }
+    override fun isFileSystemRoot(dir: File?): Boolean = safe({ false }) { shell.isFileSystemRoot(dir) }
+    override fun isDrive(dir: File?): Boolean = safe({ false }) { shell.isDrive(dir) }
+    override fun isFloppyDrive(dir: File?): Boolean = safe({ false }) { shell.isFloppyDrive(dir) }
+    override fun isComputerNode(dir: File?): Boolean = safe({ false }) { shell.isComputerNode(dir) }
+    override fun isLink(file: File?): Boolean = safe({ false }) { shell.isLink(file) }
+    override fun getLinkLocation(file: File?): File? = safe({ null }) { shell.getLinkLocation(file) }
+    override fun getRoots(): Array<File> = safe({ File.listRoots() }) { shell.roots }
+    override fun getHomeDirectory(): File = safe({ File(System.getProperty("user.home")) }) { shell.homeDirectory }
+    override fun getDefaultDirectory(): File = safe({ File(System.getProperty("user.home")) }) { shell.defaultDirectory }
+    override fun createFileObject(dir: File?, filename: String?): File = safe({ File(dir, filename) }) { shell.createFileObject(dir, filename) }
+    override fun createFileObject(path: String?): File = safe({ File(path) }) { shell.createFileObject(path) }
+    override fun getParentDirectory(dir: File?): File? = safe({ dir?.parentFile }) { shell.getParentDirectory(dir) }
 }
 
 private val lastFilesDirectory = LastDirectoryPreference("lastDirectory")
