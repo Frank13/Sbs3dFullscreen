@@ -149,6 +149,11 @@ private fun runApp(args: Array<String>) = application {
     // Plain (non-Compose-state) map: read/written from onPreviewKeyEvent and the tick loop below,
     // never needs to trigger recomposition on its own.
     val manualAlignKeyPressStart = remember { mutableMapOf<Key, Long>() }
+
+    // Set by ImageScreen's Ctrl+wheel zoom (see its onCtrlZoomed) and reset on each Ctrl key-up,
+    // so releasing a Ctrl that was held for zooming doesn't also toggle the info panel. Plain
+    // (non-Compose-state) holder, same rationale as manualAlignKeyPressStart.
+    val ctrlUsedForZoom = remember { booleanArrayOf(false) }
     val manualAlignDirectionKeys = remember { setOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown) }
 
     // Drives the accelerating nudge (viewModel.manualAlignStepPercent per second, 10x that once a
@@ -427,12 +432,20 @@ private fun runApp(args: Array<String>) = application {
                                                 else -> true
                                             }
                                         } else {
-                                            // Toggles on the key-down of Shift/Ctrl itself (not on every
+                                            // Toggles on the key-down of Shift itself (not on every
                                             // event where one happens to be held as a modifier), so a
                                             // press opens the panel and the next press closes it again -
-                                            // holding the key no longer matters.
-                                            if (inViewer && event.type == KeyEventType.KeyDown && (event.key.isShift || event.key.isCtrl)) {
+                                            // holding the key no longer matters. Ctrl toggles on key-up
+                                            // instead, and only if the wheel wasn't used while it was held,
+                                            // since Ctrl+wheel zooms the photo (see ImageScreen's onCtrlZoomed).
+                                            if (inViewer && event.type == KeyEventType.KeyDown && event.key.isShift) {
                                                 showImageInfoPanel = !showImageInfoPanel
+                                            }
+                                            // Reset on key-up rather than key-down: holding Ctrl auto-repeats
+                                            // key-down events, which would wipe the flag mid-zoom.
+                                            if (inViewer && event.key.isCtrl && event.type == KeyEventType.KeyUp) {
+                                                if (!ctrlUsedForZoom[0]) showImageInfoPanel = !showImageInfoPanel
+                                                ctrlUsedForZoom[0] = false
                                             }
                                             if (!inViewer || event.type != KeyEventType.KeyDown) {
                                                 false
@@ -726,6 +739,7 @@ private fun runApp(args: Array<String>) = application {
                                                     onNextImage = viewModel::showNextImage,
                                                     onPreviousImage = viewModel::showPreviousImage,
                                                     onToggleInfoPanel = { showImageInfoPanel = !showImageInfoPanel },
+                                                    onCtrlZoomed = { ctrlUsedForZoom[0] = true },
                                                     lastShareType = viewModel.share.lastType,
                                                     lastShareDestination = viewModel.share.lastDestination,
                                                     onShareChosen = { type, destination ->

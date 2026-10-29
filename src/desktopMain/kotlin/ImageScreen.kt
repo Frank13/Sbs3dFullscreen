@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -192,6 +194,7 @@ fun ImageScreen(
     onNextImage: () -> Unit = {},
     onPreviousImage: () -> Unit = {},
     onToggleInfoPanel: () -> Unit = {},
+    onCtrlZoomed: () -> Unit = {},
     lastShareType: Share.ShareType = Share.ShareType.SBS,
     lastShareDestination: Share.Destination = Share.Destination.EMAIL,
     onShareChosen: (Share.ShareType, Share.Destination) -> Unit = { _, _ -> },
@@ -343,13 +346,32 @@ fun ImageScreen(
     // (each one bumps the mask's version).
     val hasCopyPainting by remember(copyMask) { derivedStateOf { copyMask != null && !copyMask.isEmpty } }
 
+    // Ctrl+wheel zoom (see StereoImage's zoom/zoomPan): one scale + translation (half-local px,
+    // top-left origin) applied identically to both eye-halves, so the pair stays fused. Only while
+    // plainly viewing - every photo tool maps clicks/drags from screen px assuming an unzoomed
+    // image, so zooming is disabled (and reset) while any of them is active. Reset per photo too.
+    val zoomAllowed = !manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !copyMode &&
+        fullscreenScrollPhoto == null && !anyDialogShown
+    var zoom by remember(file) { mutableStateOf(1f) }
+    var zoomPan by remember(file) { mutableStateOf(Offset.Zero) }
+    // While zoomed, a click-drag on the photo pans it (riding on Stereo3DCursorHost's rect drag,
+    // like the crop tool). Previous drag position, null between drags - only read from pointer callbacks.
+    val zoomPanning = zoomAllowed && zoom > 1f
+    val lastPanPos = remember { mutableStateOf<Offset?>(null) }
+    LaunchedEffect(zoomAllowed) {
+        if (!zoomAllowed) {
+            zoom = 1f
+            zoomPan = Offset.Zero
+        }
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val halfWidthPx = with(density) { (maxWidth / 2).toPx() }
         val boxHeightPx = with(density) { maxHeight.toPx() }
 
         Stereo3DCursorHost(
-            rectDragActive = (cropMode && cropRect == null) || spotIssuesMode || copyPainting,
+            rectDragActive = (cropMode && cropRect == null) || spotIssuesMode || copyPainting || zoomPanning,
             rawClickActive = clickAlignMode || copyPickingPoints,
             onRawClick = { halfLocal, isRightHalf ->
                 val bitmap = imageBitmap
@@ -396,10 +418,29 @@ fun ImageScreen(
                     if (delta > 0) onNextImage() else if (delta < 0) onPreviousImage()
                 }
             },
+            // Ctrl+wheel zooms around the cursor instead (forward/up zooms in), never below 1x.
+            onCtrlScroll = if (!zoomAllowed) null else { delta, at ->
+                onCtrlZoomed()
+                val newZoom = when {
+                    delta < 0 -> zoom * ZoomStep
+                    delta > 0 -> zoom / ZoomStep
+                    else -> zoom
+                }.coerceIn(1f, MaxZoom)
+                // Once per zoom session (leaving 1x), not per wheel notch.
+                if (zoom == 1f && newZoom > 1f) Analytics.logEvent("photo_zoom")
+                zoomPan = zoomedPan(zoomPan, zoom, newZoom, at, halfWidthPx, boxHeightPx)
+                zoom = newZoom
+            },
             onCursorMove = { copyBrushPos.value = it },
             onRectDragChange = { start, current ->
                 val bitmap = imageBitmap
-                if (copyPainting) {
+                if (zoomPanning) {
+                    val previous = lastPanPos.value
+                    if (current != null && previous != null) {
+                        zoomPan = clampedPan(zoomPan + (current - previous), zoom, halfWidthPx, boxHeightPx)
+                    }
+                    lastPanPos.value = current
+                } else if (copyPainting) {
                     if (current == null || bitmap == null) {
                         lastCopyPaint.value = null
                     } else {
@@ -418,8 +459,8 @@ fun ImageScreen(
                 }
             },
             onRectDragEnd = onRectDragEnd@{ start, end ->
-                // The brush already painted along the drag in onRectDragChange.
-                if (copyPainting) return@onRectDragEnd
+                // The brush already painted (or the pan already moved) along the drag in onRectDragChange.
+                if (copyPainting || zoomPanning) return@onRectDragEnd
                 val bitmap = imageBitmap
                 if (bitmap != null) {
                     val frac = computeDragFraction(bitmap, halveLeftRightImages, halfWidthPx, boxHeightPx, start, end)
@@ -469,7 +510,7 @@ fun ImageScreen(
                         FullscreenScrollStereoImage(bitmap, fullscreenScrollPhoto, fullscreenScrollDurationMs, halveLeftRightImages,
                             scrollSpeedLimitPercent, onFullscreenScrollDurationMs)
                     } else {
-                        StereoImage(bitmap, halveLeftRightImages, manualAlignOffsetX, manualAlignOffsetY, cropRect)
+                        StereoImage(bitmap, halveLeftRightImages, manualAlignOffsetX, manualAlignOffsetY, cropRect, zoom, zoomPan)
                     }
                     if (clickAlignMode && !(clickAlignPreviewActive && preview != null)) {
                         ClickAlignPointsOverlay(bitmap, halveLeftRightImages, shrinkControls, clickAlignLeftPoint, clickAlignRightPoint)
@@ -973,6 +1014,9 @@ private fun SpotIssueRectsOverlayHalf(rectsPx: List<Rect>, offsetX: Dp) {
  * source rect. Mutually exclusive with [manualAlignOffsetX]/[manualAlignOffsetY] in practice (the
  * crop tool can't be started while manual-align is active - see AppViewModel.startCrop), so when
  * present it simply overrides the dx/dy-derived region instead of composing with it.
+ *
+ * [zoom]/[zoomPan] (Ctrl+wheel, see ImageScreen) scale and translate each half's box by the very
+ * same amount (top-left origin, half-local px), clipped to that half, so both eyes zoom together.
  */
 @Composable
 private fun StereoImage(
@@ -981,7 +1025,16 @@ private fun StereoImage(
     manualAlignOffsetX: Float = 0f,
     manualAlignOffsetY: Float = 0f,
     cropRect: CropRectFraction? = null,
+    zoom: Float = 1f,
+    zoomPan: Offset = Offset.Zero,
 ) {
+    val zoomModifier = if (zoom == 1f) Modifier else Modifier.clipToBounds().graphicsLayer {
+        scaleX = zoom
+        scaleY = zoom
+        translationX = zoomPan.x
+        translationY = zoomPan.y
+        transformOrigin = TransformOrigin(0f, 0f)
+    }
     val halfWidth = bitmap.width / 2
     val heightPx = bitmap.height
     val rawDx = (manualAlignOffsetX * halfWidth).roundToInt()
@@ -1003,14 +1056,33 @@ private fun StereoImage(
         cropSize = IntSize(rw, rh)
     }
     Row(modifier = Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().weight(1f).then(zoomModifier), contentAlignment = Alignment.Center) {
             StereoHalfImage(bitmap, leftOffset, cropSize, halveLeftRightImages)
         }
-        Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().weight(1f).then(zoomModifier), contentAlignment = Alignment.Center) {
             StereoHalfImage(bitmap, rightOffset, cropSize, halveLeftRightImages)
         }
     }
 }
+
+private const val ZoomStep = 1.15f
+private const val MaxZoom = 8f
+
+/**
+ * New [StereoImage] translation after zooming from [oldZoom] to [newZoom] around [anchor] (half-local
+ * px), so the photo point under it stays put - clamped so the zoomed half always covers its whole
+ * [boxWidth]x[boxHeight] box (no black gap ever opens up past an edge; back to zero at 1x).
+ */
+private fun zoomedPan(pan: Offset, oldZoom: Float, newZoom: Float, anchor: Offset, boxWidth: Float, boxHeight: Float): Offset {
+    val ratio = newZoom / oldZoom
+    val x = anchor.x - ratio * (anchor.x - pan.x)
+    val y = anchor.y - ratio * (anchor.y - pan.y)
+    return clampedPan(Offset(x, y), newZoom, boxWidth, boxHeight)
+}
+
+/** [pan] clamped so a half zoomed by [zoom] still covers its whole [boxWidth]x[boxHeight] box. */
+private fun clampedPan(pan: Offset, zoom: Float, boxWidth: Float, boxHeight: Float): Offset =
+    Offset(pan.x.coerceIn(boxWidth * (1 - zoom), 0f), pan.y.coerceIn(boxHeight * (1 - zoom), 0f))
 
 /**
  * Crops [bitmap] to the [srcOffset]/[srcSize] region and fits+centers it within this composable's

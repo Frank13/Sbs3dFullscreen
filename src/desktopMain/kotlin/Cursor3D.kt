@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
@@ -375,6 +376,9 @@ fun Stereo3DCursorHost(
     // way every other pointer event here is (see the consume() call below), so it never also
     // triggers native Compose scroll behavior on whatever's underneath.
     onScroll: (delta: Float) -> Unit = {},
+    // When non-null, a wheel event with Ctrl held goes here instead of onScroll, along with the
+    // clamped left-half-local cursor position (see ImageScreen's Ctrl+wheel zoom, anchored on it).
+    onCtrlScroll: ((delta: Float, at: Offset) -> Unit)? = null,
     // Fired with the clamped left-half-local cursor position on every move/press, and null once the
     // pointer leaves the window - see ImageScreen's "Copy from image" brush outline, which follows it.
     onCursorMove: (Offset?) -> Unit = {},
@@ -410,6 +414,8 @@ fun Stereo3DCursorHost(
     SideEffect { latestOnRawClick.value = onRawClick }
     val latestOnScroll = remember { mutableStateOf(onScroll) }
     SideEffect { latestOnScroll.value = onScroll }
+    val latestOnCtrlScroll = remember { mutableStateOf(onCtrlScroll) }
+    SideEffect { latestOnCtrlScroll.value = onCtrlScroll }
     val latestOnCursorMove = remember { mutableStateOf(onCursorMove) }
     SideEffect { latestOnCursorMove.value = onCursorMove }
     CompositionLocalProvider(
@@ -532,7 +538,12 @@ fun Stereo3DCursorHost(
                                             }
                                         }
                                         PointerEventType.Scroll -> {
-                                            latestOnScroll.value(change.scrollDelta.y)
+                                            val onCtrl = latestOnCtrlScroll.value
+                                            if (onCtrl != null && event.keyboardModifiers.isCtrlPressed) {
+                                                onCtrl(change.scrollDelta.y, logical)
+                                            } else {
+                                                latestOnScroll.value(change.scrollDelta.y)
+                                            }
                                         }
                                         PointerEventType.Exit -> {
                                             cursorPos = null
