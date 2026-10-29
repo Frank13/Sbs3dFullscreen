@@ -254,4 +254,8 @@
     <string name="whats_new_v120_item_1">Add rolling credits at the end of your playlists</string>
     <string name="whats_new_v120_item_2">Open .mpo 3D photos with a double-click</string>
     <string name="whats_new_v120_item_3">Fix: photos missing in playlists with accented names</string>
+    <!-- v1.3.0 -->
+    <string name="whats_new_v130_item_1">Copy from image: repair one eye's photo from the other</string>
+    <string name="whats_new_v130_item_2">Zoom with Ctrl + mouse wheel, drag to move around</string>
+    <string name="whats_new_v130_item_3">Fix: gallery now shows photos saved or deleted</string>
 </resources>

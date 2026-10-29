@@ -254,4 +254,8 @@
     <string name="whats_new_v120_item_1">Ajoutez un générique défilant à la fin de vos diaporamas</string>
     <string name="whats_new_v120_item_2">Ouvrez les photos 3D .mpo d'un double-clic</string>
     <string name="whats_new_v120_item_3">Correction : photos absentes des diaporamas aux noms accentués</string>
+    <!-- v1.3.0 -->
+    <string name="whats_new_v130_item_1">Copier depuis l'image : réparer une vue avec l'autre</string>
+    <string name="whats_new_v130_item_2">Zoom avec Ctrl + molette, glisser pour se déplacer</string>
+    <string name="whats_new_v130_item_3">Correction : la galerie affiche les photos enregistrées ou supprimées</string>
 </resources>
