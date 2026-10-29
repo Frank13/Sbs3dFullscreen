@@ -403,6 +403,8 @@ fun ImageScreen(
             // .cursor3DDepthTarget(0f) below) instead of always floating at the default -1%.
             useDepthRegistry = shrinkControls || clickAlignMode || copyMode,
             outlineOnly = manualAlignMode || clickAlignMode || copyPickingPoints,
+            // The brush outline (see CopyBrushOutline) stands in for the cursor over the photo.
+            hideDotOffTargets = copyPainting,
             // Aliases the mouse wheel to the Next/Previous arrow keys (see Main.kt's
             // onPreviewKeyEvent), same "backward" = forward-in-time convention as scrolling down a
             // list: scrolling backward/down (positive delta) advances to the next image, scrolling
@@ -431,7 +433,8 @@ fun ImageScreen(
                 zoomPan = zoomedPan(zoomPan, zoom, newZoom, at, halfWidthPx, boxHeightPx)
                 zoom = newZoom
             },
-            onCursorMove = { copyBrushPos.value = it },
+            // Hidden over a control, where the cursor dot shows instead (see hideDotOffTargets).
+            onCursorMove = { pos, overTarget -> copyBrushPos.value = if (overTarget) null else pos },
             onRectDragChange = { start, current ->
                 val bitmap = imageBitmap
                 if (zoomPanning) {
@@ -1408,6 +1411,12 @@ private fun CopyBrushOutline(
                     val strokeWidth = (if (shrinkControls) 3.dp else 2.dp).toPx()
                     drawOval(Color.Black.copy(alpha = 0.6f), Offset(pos.x - rx, pos.y - ry), Size(rx * 2, ry * 2), style = Stroke(strokeWidth + 2f))
                     drawOval(Color.White, Offset(pos.x - rx, pos.y - ry), Size(rx * 2, ry * 2), style = Stroke(strokeWidth))
+                    // Inner ring: the brush's fully opaque core, outside of which it fades to the outer ring.
+                    val crx = rx * BrushHardCoreFraction
+                    val cry = ry * BrushHardCoreFraction
+                    val thin = strokeWidth / 2
+                    drawOval(Color.Black.copy(alpha = 0.6f), Offset(pos.x - crx, pos.y - cry), Size(crx * 2, cry * 2), style = Stroke(thin + 2f))
+                    drawOval(Color.White, Offset(pos.x - crx, pos.y - cry), Size(crx * 2, cry * 2), style = Stroke(thin))
                 }
             }
         }

@@ -381,7 +381,8 @@ fun Stereo3DCursorHost(
     onCtrlScroll: ((delta: Float, at: Offset) -> Unit)? = null,
     // Fired with the clamped left-half-local cursor position on every move/press, and null once the
     // pointer leaves the window - see ImageScreen's "Copy from image" brush outline, which follows it.
-    onCursorMove: (Offset?) -> Unit = {},
+    // overTarget = whether that position hovers a registered click/scrub/text target (a control).
+    onCursorMove: (pos: Offset?, overTarget: Boolean) -> Unit = { _, _ -> },
     // Mirrors AppViewModel.shrinkControls (see ShrinkControls.kt's shrinkHorizontally): when on,
     // every other overlay control is squeezed horizontally by 2, so the cursor dots get the same
     // treatment for visual consistency - squeezed around their own center, which just turns the
@@ -395,6 +396,10 @@ fun Stereo3DCursorHost(
     // Draws the cursor dots as a hollow white ring instead of a filled disc - see ImageScreen.kt's
     // alignment tools, where a filled dot would hide the exact image detail being lined up.
     outlineOnly: Boolean = false,
+    // Hides the cursor dots except while hovering a registered click/scrub/text target - see
+    // ImageScreen.kt's "Copy from image" painting phase, where the brush outline replaces the dot
+    // over the photo but the dot is still needed to aim at the Save/Cancel buttons.
+    hideDotOffTargets: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val registry = remember { CursorHitRegistry() }
@@ -418,6 +423,8 @@ fun Stereo3DCursorHost(
     SideEffect { latestOnCtrlScroll.value = onCtrlScroll }
     val latestOnCursorMove = remember { mutableStateOf(onCursorMove) }
     SideEffect { latestOnCursorMove.value = onCursorMove }
+    fun isOverTarget(pos: Offset) =
+        registry.hitTest(pos) != null || scrubRegistry.hitTest(pos) != null || textClickRegistry.hitTest(pos) != null
     CompositionLocalProvider(
         LocalCursorHitRegistry provides registry,
         LocalCursorScrubRegistry provides scrubRegistry,
@@ -469,7 +476,7 @@ fun Stereo3DCursorHost(
                                         PointerEventType.Move -> {
                                             cursorPos = logical
                                             lastMoveTick++
-                                            latestOnCursorMove.value(logical)
+                                            latestOnCursorMove.value(logical, isOverTarget(logical))
                                             val scrub = activeScrub
                                             if (scrub != null) {
                                                 scrub.onScrub(scrubFraction(scrub, logical))
@@ -480,7 +487,7 @@ fun Stereo3DCursorHost(
                                         PointerEventType.Press -> {
                                             cursorPos = logical
                                             lastMoveTick++
-                                            latestOnCursorMove.value(logical)
+                                            latestOnCursorMove.value(logical, isOverTarget(logical))
                                             // A press that lands on a registered scrub target (the
                                             // video progress bar) starts scrubbing; a press on a
                                             // registered text-click target (StereoBlinkingCaretTextField)
@@ -547,7 +554,7 @@ fun Stereo3DCursorHost(
                                         }
                                         PointerEventType.Exit -> {
                                             cursorPos = null
-                                            latestOnCursorMove.value(null)
+                                            latestOnCursorMove.value(null, false)
                                             pressStart = null
                                             activeScrub = null
                                             if (rectDragStart != null) {
@@ -573,7 +580,7 @@ fun Stereo3DCursorHost(
                     content()
                 }
                 val pos = cursorPos
-                if (cursorVisible && pos != null) {
+                if (cursorVisible && pos != null && (!hideDotOffTargets || isOverTarget(pos))) {
                     // Only consulted under "shrink controls" - cursor3DDepthTarget call sites
                     // register unconditionally (harmless either way, same rationale as
                     // cursor3DClickTarget's callers), so gating happens here instead.

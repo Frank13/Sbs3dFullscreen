@@ -38,7 +38,8 @@ private const val MaskMaxSide = 1024
 
 // Inside this fraction of the brush radius the copy is fully opaque; from there to the edge it
 // fades smoothly to 0 - the "brush with a gradient" the user asked for.
-private const val BrushHardCoreFraction = 0.5f
+// Also drawn as the inner ring of ImageScreen's CopyBrushOutline.
+internal const val BrushHardCoreFraction = 0.5f
 
 /**
  * The painted area of the "Copy from image" tool: one alpha byte per mask pixel over the TARGET
