@@ -13,9 +13,9 @@ val localProperties = Properties().apply {
 }
 
 plugins {
-    kotlin("multiplatform") version "2.4.0"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
-    id("org.jetbrains.compose") version "1.11.1"
+    kotlin("multiplatform") version "2.4.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21"
+    id("org.jetbrains.compose") version "1.12.2"
 }
 
 group = "fr.camera3d"
@@ -38,13 +38,13 @@ kotlin {
         val opencvJarExists = file("libs/opencv/opencv-500.jar").exists()
         val commonMain = getByName("commonMain") {
             dependencies {
-                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
-                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                implementation("org.jetbrains.compose.runtime:runtime:1.12.2")
+                implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
                 implementation("org.jetbrains.compose.material3:material3:1.9.0")
                 // Same Material icon set (Icons.Filled.Add, Icons.AutoMirrored.Filled.ArrowBack, ...)
                 // CameraSync3D's playlist screens use, for a matching look on desktop.
                 implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
-                implementation("org.jetbrains.compose.components:components-resources:1.11.1")
+                implementation("org.jetbrains.compose.components:components-resources:1.12.2")
                 // Jackson: same coordinates/version as CameraSync3D (the companion Android app) so the
                 // EXIF3D (Desc3d) and playlist YAML formats stay wire-compatible between the two apps.
                 implementation("tools.jackson.module:jackson-module-kotlin:3.2.3")
@@ -52,7 +52,7 @@ kotlin {
                 // Same coordinates as CameraSync3D's app/build.gradle, so the shared playlist item
                 // Composable (synced from Android) can use coil3.compose.SubcomposeAsyncImage identically
                 // on both platforms.
-                implementation("io.coil-kt.coil3:coil-compose:3.5.0")
+                implementation("io.coil-kt.coil3:coil-compose:3.6.3")
                 // Same coordinates as CameraSync3D's app/build.gradle, for drag-to-reorder in the shared
                 // playlist item list.
                 implementation("sh.calvin.reorderable:reorderable:3.1.0")
@@ -91,10 +91,10 @@ kotlin {
                 // used to do. Requires VLC to be installed on the machine (libvlc is loaded from
                 // its install folder). Deliberately not the vlcj library: it is GPLv3, which
                 // conflicts with distributing this app closed-source / on the Microsoft Store.
-                implementation("net.java.dev.jna:jna:5.14.0")
+                implementation("net.java.dev.jna:jna:5.19.1")
                 // Crash/error reporting (CrashReporting.kt) - Crashlytics has no desktop JVM SDK.
                 // MIT-licensed, so fine for closed-source/Store distribution.
-                implementation("io.sentry:sentry:8.61.0")
+                implementation("io.sentry:sentry:8.62.0")
             }
         }
         commonTest.dependencies {
@@ -107,7 +107,7 @@ kotlin {
                 // listing screenshots without launching a real window. desktopMain's
                 // compose.desktop.currentOs is already on this source set's classpath (test
                 // source sets extend their associated main compilation).
-                implementation(compose.desktop.uiTestJUnit4)
+                implementation("org.jetbrains.compose.ui:ui-test-junit4:1.12.2")
             }
         }
     }
@@ -210,7 +210,7 @@ compose.desktop {
 
 // Stages the vendored OpenCV DLL where appResourcesRootDir expects it, so every packaging task
 // (createDistributable, packageMsi/Exe, packageMsix) bundles it into the app's resources dir.
-val stageOpencvResources by tasks.registering(Copy::class) {
+val stageOpencvResources = tasks.register<Copy>("stageOpencvResources") {
     from(project.file("libs/opencv")) { include("*.dll") }
     into(layout.buildDirectory.dir("opencvResources/windows-x64"))
 }

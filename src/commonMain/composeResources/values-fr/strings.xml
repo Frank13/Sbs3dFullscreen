@@ -6,6 +6,8 @@
     <string name="choose_playlist_button">Importer un diaporama</string>
     <string name="playlist_dialog_title">Sélectionner un dossier de diaporama à importer</string>
     <string name="import_playlist_already_exists">Un diaporama nommé « %1$s » existe déjà</string>
+    <string name="import_playlist_read_failed_title">Impossible d'importer « %1$s »</string>
+    <string name="import_playlist_read_failed_text">Certains fichiers de ce dossier n'ont pas pu être lus. S'il est stocké dans OneDrive (ou un autre stockage cloud), vérifiez que cette application est lancée, ou rendez le dossier disponible hors connexion (« Toujours conserver sur cet appareil »), puis réessayez.</string>
     <string name="playlist_list_button">Diaporamas</string>
     <string name="playlist_list_title">Diaporamas</string>
     <string name="playlist_list_refresh">Actualiser</string>

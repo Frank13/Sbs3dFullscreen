@@ -96,7 +96,7 @@ class StoreScreenshotTest {
                 audioOutputDeviceId = "",
                 onAudioOutputDeviceChosen = {},
                 onFilesChosen = {},
-                onImportPlaylist = { true },
+                onImportPlaylist = { ImportPlaylistResult.IMPORTED },
                 onOpenPlaylistList = {},
                 onOpenGallery = {},
                 onOpenAbout = {},

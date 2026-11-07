@@ -10,6 +10,7 @@ import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 enum class Screen { Welcome, About, Gallery, PlaylistList, PlaylistEdit, PlaylistItem, ImageView, VideoView }
 
@@ -41,6 +42,9 @@ data class AlignToast(val success: Boolean, val token: Int, val zoomScale: Float
  * pipeline (e.g. nothing currently) don't need to pass it.
  */
 data class SaveToast(val success: Boolean, val token: Int, val exifError: String? = null)
+
+/** Outcome of AppViewModel.importPlaylistFolder - the two failures get distinct WelcomeScreen dialogs. */
+enum class ImportPlaylistResult { IMPORTED, ALREADY_EXISTS, READ_FAILED }
 
 /**
  * A Next/Previous navigation blocked by an unsaved auto-align/correct-zoom preview (see
@@ -843,14 +847,20 @@ class AppViewModel(initialFile: File?) {
 
     /**
      * Copies an externally-selected playlist folder into playlistsRoot and opens it for editing -
-     * see PlaylistEditorState.importFolder. Returns false without copying anything if a playlist
-     * with the same folder name already exists in the root.
+     * see PlaylistEditorState.importFolder. Returns ALREADY_EXISTS without copying anything if a
+     * playlist with the same folder name already exists in the root, READ_FAILED if a source file
+     * couldn't be read (nothing is left behind in that case either).
      */
-    suspend fun importPlaylistFolder(folder: File): Boolean {
-        val imported = playlistEditor.importFolder(folder) ?: return false
+    suspend fun importPlaylistFolder(folder: File): ImportPlaylistResult {
+        val imported = try {
+            playlistEditor.importFolder(folder) ?: return ImportPlaylistResult.ALREADY_EXISTS
+        } catch (e: IOException) {
+            Analytics.logEvent("app_error", mapOf("type" to "import_playlist"))
+            return ImportPlaylistResult.READ_FAILED
+        }
         screen = Screen.PlaylistEdit
         requireVlcIfPlaylistHasVideo(imported)
-        return true
+        return ImportPlaylistResult.IMPORTED
     }
 
     /** Whether a new playlist named [name] wouldn't collide with an existing one already on disk. */

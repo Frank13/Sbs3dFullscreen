@@ -62,6 +62,8 @@ import sbs3dViewer.resources.choose_jpeg_button
 import sbs3dViewer.resources.choose_playlist_button
 import sbs3dViewer.resources.file_dialog_title
 import sbs3dViewer.resources.import_playlist_already_exists
+import sbs3dViewer.resources.import_playlist_read_failed_text
+import sbs3dViewer.resources.import_playlist_read_failed_title
 import sbs3dViewer.resources.gallery_dialog_title
 import sbs3dViewer.resources.ok_button
 import sbs3dViewer.resources.opencv5_toggle_label
@@ -88,7 +90,7 @@ fun WelcomeScreen(
     shrinkControls: Boolean,
     onShrinkControlsChosen: (Boolean) -> Unit,
     onFilesChosen: (List<File>) -> Unit,
-    onImportPlaylist: suspend (File) -> Boolean,
+    onImportPlaylist: suspend (File) -> ImportPlaylistResult,
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
     onOpenAbout: () -> Unit,
@@ -101,6 +103,7 @@ fun WelcomeScreen(
     val playlistDialogTitle = stringResource(Res.string.playlist_dialog_title)
     val galleryDialogTitle = stringResource(Res.string.gallery_dialog_title)
     var importErrorFolderName by remember { mutableStateOf<String?>(null) }
+    var importReadFailedFolderName by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     // Re-checked each time the welcome screen is shown, so deleting the shortcut brings the button back.
     var showDesktopShortcutButton by remember { mutableStateOf(initialShowDesktopShortcutButton) }
@@ -155,8 +158,10 @@ fun WelcomeScreen(
                         // Suspends while the folder is copied in the background (see
                         // PlaylistEditorState.isCopying / Main.kt's CopyingFilesOverlay).
                         scope.launch {
-                            if (!onImportPlaylist(folder)) {
-                                importErrorFolderName = folder.name
+                            when (onImportPlaylist(folder)) {
+                                ImportPlaylistResult.IMPORTED -> {}
+                                ImportPlaylistResult.ALREADY_EXISTS -> importErrorFolderName = folder.name
+                                ImportPlaylistResult.READ_FAILED -> importReadFailedFolderName = folder.name
                             }
                         }
                     }
@@ -241,6 +246,19 @@ fun WelcomeScreen(
                 text = {},
                 confirmButton = {
                     TextButton(onClick = { importErrorFolderName = null }) {
+                        Text(stringResource(Res.string.ok_button))
+                    }
+                },
+            )
+        }
+
+        importReadFailedFolderName?.let { folderName ->
+            AlertDialog(
+                onDismissRequest = { importReadFailedFolderName = null },
+                title = { Text(stringResource(Res.string.import_playlist_read_failed_title, folderName)) },
+                text = { Text(stringResource(Res.string.import_playlist_read_failed_text)) },
+                confirmButton = {
+                    TextButton(onClick = { importReadFailedFolderName = null }) {
                         Text(stringResource(Res.string.ok_button))
                     }
                 },

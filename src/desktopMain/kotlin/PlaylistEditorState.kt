@@ -10,6 +10,7 @@ import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 /**
  * Holds the PlaylistList/PlaylistEdit/PlaylistItem screens' state (the scanned playlists, the one
@@ -111,7 +112,10 @@ class PlaylistEditorState(rootOverride: File? = null) {
      * Copies an externally-selected playlist folder (as created/synced by CameraSync3D, or a plain
      * folder of JPEGs) into playlistsRoot and opens it for editing, mirroring startCreate's
      * create-then-edit flow. Returns null without copying anything if a playlist with the same
-     * folder name already exists in the root.
+     * folder name already exists in the root. Throws [IOException] if a source file can't be read
+     * (e.g. an online-only OneDrive file while OneDrive isn't running: "The cloud file provider is
+     * not running"), after deleting the partially-copied destination so a retry isn't blocked by
+     * the "already exists" check and no half-imported playlist shows up in the list.
      */
     suspend fun importFolder(folder: File): Playlist? {
         // Sanitized like startCreate's dirName, so an imported folder can never end up with a
@@ -123,7 +127,12 @@ class PlaylistEditorState(rootOverride: File? = null) {
         if (destination.exists()) return null
         val playlist = copying {
             playlistsRoot.mkdirs()
-            folder.copyRecursively(destination)
+            try {
+                folder.copyRecursively(destination)
+            } catch (e: IOException) {
+                destination.deleteRecursively()
+                throw e
+            }
             Playlist.loadPlaylist(DesktopPlaylistStorage(playlistsRoot), destination.name)
         }
         editing = playlist
@@ -175,13 +184,21 @@ class PlaylistEditorState(rootOverride: File? = null) {
         // the same filename crash PlaylistScreen's LazyColumn (duplicate key) and would also have
         // the second import silently overwrite the first one's file content on disk.
         val existingNames = playlist.photos.mapTo(mutableSetOf()) { it.filename }
-        val copiedItems = copying { files.map { src ->
+        val copiedItems = copying { files.mapNotNull { src ->
             val destName = uniqueDestFilename(src.name, existingNames)
-            existingNames += destName
             val dest = File(folder, destName)
             if (src.canonicalFile != dest.canonicalFile) {
-                src.copyTo(dest, overwrite = true)
+                // Skipped like addSoundtrack does, rather than crashing the whole import - e.g. an
+                // online-only OneDrive file while OneDrive isn't running ("The cloud file provider
+                // is not running"). The partial copy is removed so no orphan file is left behind.
+                try {
+                    src.copyTo(dest, overwrite = true)
+                } catch (e: IOException) {
+                    dest.delete()
+                    return@mapNotNull null
+                }
             }
+            existingNames += destName
             // toPath().toUri() (not File.toURI()) - on Windows, File.toURI() emits the ambiguous
             // "file:/C:/..." single-slash form, which coil3's Uri parser mis-parses: it treats the
             // drive letter's ':' as a second scheme separator and drops "C:" from the path, so the
