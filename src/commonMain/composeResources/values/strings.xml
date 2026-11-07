@@ -260,4 +260,8 @@
     <string name="whats_new_v130_item_1">Copy from image: repair one eye's photo from the other</string>
     <string name="whats_new_v130_item_2">Zoom with Ctrl + mouse wheel, drag to move around</string>
     <string name="whats_new_v130_item_3">Fix: gallery now shows photos saved or deleted</string>
+    <!-- v1.3.1 -->
+    <string name="whats_new_v131_item_1">Fix: crash when opening the file chooser on some folders</string>
+    <string name="whats_new_v131_item_2">Fix: playlist import crash when OneDrive is offline</string>
+    <string name="whats_new_v131_item_3">Fix: unreadable photos are skipped when added to a playlist</string>
 </resources>

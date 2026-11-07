@@ -260,4 +260,8 @@
     <string name="whats_new_v130_item_1">Copier depuis l'image : réparer une vue avec l'autre</string>
     <string name="whats_new_v130_item_2">Zoom avec Ctrl + molette, glisser pour se déplacer</string>
     <string name="whats_new_v130_item_3">Correction : la galerie affiche les photos enregistrées ou supprimées</string>
+    <!-- v1.3.1 -->
+    <string name="whats_new_v131_item_1">Correction : plantage à l'ouverture du sélecteur de fichiers sur certains dossiers</string>
+    <string name="whats_new_v131_item_2">Correction : plantage à l'import d'un diaporama si OneDrive est déconnecté</string>
+    <string name="whats_new_v131_item_3">Correction : les photos illisibles sont ignorées à l'ajout dans un diaporama</string>
 </resources>
