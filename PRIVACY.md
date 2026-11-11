@@ -1,6 +1,6 @@
 # Privacy Policy — SBS 3D Viewer
 
-_Last updated: 2026-09-19_
+_Last updated: 2026-11-08_
 
 SBS 3D Viewer ("the app") is a Windows desktop viewer for side-by-side 3D JPEG photos. This
 page describes what data the app collects and how it is used.
@@ -34,11 +34,28 @@ which menu item was clicked) to Google Analytics, to help understand which featu
   of receiving these events, under [Google's Privacy Policy](https://policies.google.com/privacy).
 - You can change your mind at any time from the app's settings.
 
+## Crash and error reports
+
+With the same consent as usage analytics (and never without it), the app sends a report to
+[Sentry](https://sentry.io) when it hits an error or crashes, to help find and fix bugs.
+
+- A report contains the error type and message, the technical stack trace (which parts of the
+  app's code were running), the app version, and your Windows and Java versions.
+- Before a report leaves your device, file paths, file names, your Windows user folder and your
+  Windows user name are removed from it. Your computer's name, IP address and photo/video
+  contents are never included.
+- Reports are stored in Sentry's European Union data region (Frankfurt, Germany) and are deleted
+  automatically after Sentry's retention period (currently 30 days), under
+  [Sentry's Privacy Policy](https://sentry.io/privacy/).
+- Every crash is also written to a local log file in your Windows user folder
+  (`sbs3dViewer-crash.log`), which never leaves your device unless you choose to share it.
+
 ## Data retention and deletion
 
-Locally stored data (your consent choice and the random install identifier) lives in the
-standard Windows per-user application preferences store and is removed if you uninstall the app.
-To request deletion of any analytics data already sent, contact us using the details below.
+Locally stored data (your consent choice, the random install identifier and the local crash log)
+lives on your device; the consent choice and install identifier are in the standard Windows
+per-user application preferences store and are removed if you uninstall the app. To request
+deletion of any analytics data or crash reports already sent, contact us using the details below.
 
 ## Contact
 

@@ -30,6 +30,16 @@ object CrashReporting {
     // (FileNotFoundException, ImageIO, ...) routinely embed the full path of the photo involved.
     private val pathRegex = Regex("""[A-Za-z]:[\\/][^\r\n"'<>|?*]*|\\\\[^\s\\]+\\[^\r\n"'<>|?*]*""")
 
+    private val userName = System.getProperty("user.name").orEmpty()
+
+    // Bare filenames of the media/playlist files this app handles ("Cannot decode IMG_1234.jpg"),
+    // which carry no drive letter for pathRegex to catch. Limited to these extensions so class
+    // names like java.lang.String in exception messages are left readable.
+    private val fileNameRegex = Regex(
+        """[^\s\\/:"'<>|?*]+\.(?:${(PhotoExtensions + VideoExtensions + setOf("png", "json", "zip")).joinToString("|")})\b""",
+        RegexOption.IGNORE_CASE,
+    )
+
     @Volatile
     private var started = false
 
@@ -82,7 +92,9 @@ object CrashReporting {
                 // Set by the jpackage launcher only, so `./gradlew run` crashes stay out of the
                 // production view in Sentry.
                 options.environment = if (System.getProperty("jpackage.app-path") != null) "production" else "development"
-                // sendDefaultPii is left at its default (false): no IP address/user attached.
+                // Already the SDK default, but set explicitly so a future default change can't
+                // silently start attaching the IP address/user. PRIVACY.md relies on this.
+                options.isSendDefaultPii = false
                 // Default would attach the machine's hostname, which is often the user's name.
                 options.isAttachServerName = false
                 // install() above already owns the default handler and reports through report().
@@ -105,11 +117,18 @@ object CrashReporting {
             message.formatted = message.formatted?.let(::scrub)
             message.message = message.message?.let(::scrub)
         }
+        // None are added today, but anything added later must not bypass the scrubbing.
+        event.breadcrumbs?.forEach { breadcrumb -> breadcrumb.message = breadcrumb.message?.let(::scrub) }
         return event
     }
 
     private fun scrub(text: String): String {
         val withoutHome = if (userHome.isNotBlank()) text.replace(userHome, "<home>", ignoreCase = true) else text
-        return pathRegex.replace(withoutHome, "<path>")
+        val withoutPaths = fileNameRegex.replace(pathRegex.replace(withoutHome, "<path>"), "<file>")
+        // Last, and only as a whole word: a short Windows account name ("al") would otherwise
+        // also mangle unrelated words.
+        return if (userName.isNotBlank()) {
+            withoutPaths.replace(Regex("""\b${Regex.escape(userName)}\b""", RegexOption.IGNORE_CASE), "<user>")
+        } else withoutPaths
     }
 }
