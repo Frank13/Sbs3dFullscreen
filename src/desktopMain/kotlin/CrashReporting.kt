@@ -1,3 +1,4 @@
+import io.sentry.KeyValueCollectionBehavior
 import io.sentry.Sentry
 import io.sentry.SentryEvent
 import io.sentry.SentryOptions
@@ -92,9 +93,13 @@ object CrashReporting {
                 // Set by the jpackage launcher only, so `./gradlew run` crashes stay out of the
                 // production view in Sentry.
                 options.environment = if (System.getProperty("jpackage.app-path") != null) "production" else "development"
-                // Already the SDK default, but set explicitly so a future default change can't
-                // silently start attaching the IP address/user. PRIVACY.md relies on this.
-                options.isSendDefaultPii = false
+                // Replaces the deprecated sendDefaultPii = false, so the IP address/user is never
+                // attached. PRIVACY.md relies on this. Once any dataCollection field is set, every
+                // unset one defaults to *on*, so each one that could carry PII is pinned off here.
+                options.dataCollection.userInfo = false
+                options.dataCollection.filePaths = false
+                options.dataCollection.cookies = KeyValueCollectionBehavior.off()
+                options.dataCollection.httpBodies = emptySet()
                 // Default would attach the machine's hostname, which is often the user's name.
                 options.isAttachServerName = false
                 // install() above already owns the default handler and reports through report().
