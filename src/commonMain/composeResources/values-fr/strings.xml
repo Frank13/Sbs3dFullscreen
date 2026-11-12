@@ -152,6 +152,10 @@
     <string name="save_finished_success">Enregistré</string>
     <string name="save_finished_exif_lost">Enregistré, mais les métadonnées d'origine n'ont pas pu être copiées : %1$s</string>
     <string name="save_finished_failed">Échec de l'enregistrement</string>
+    <string name="video_playback_failed_message">Impossible de lire cette vidéo — elle est peut-être vide, corrompue, n'est pas une vidéo valide ou n'est pas téléchargée (OneDrive)</string>
+    <string name="photo_read_failed">Impossible de lire cette photo — fichier corrompu ou non téléchargé (OneDrive)</string>
+    <string name="photo_metadata_read_failed">Impossible de lire les métadonnées de cette photo — fichier corrompu ou non téléchargé (OneDrive)</string>
+    <string name="exif_update_failed">Impossible de modifier cette photo — fichier en lecture seule ou non téléchargé (OneDrive)</string>
     <string name="share_dialog_title">Partager / Sauvegarder sous</string>
     <string name="share_section_image_type">Type d'image</string>
     <string name="share_section_action">Action</string>
@@ -163,7 +167,7 @@
     <string name="share_destination_downloads">Sauvegarder dans le répertoire Downloads</string>
     <string name="share_failed_toast">Impossible d'ouvrir votre programme de messagerie</string>
     <string name="image_likely_not_3d_toast">Cette image ne semble pas être une photo 3D côte à côte</string>
-    <string name="image_decode_failed_message">Impossible d'ouvrir cette photo — elle est peut-être corrompue ou n'est pas une image valide</string>
+    <string name="image_decode_failed_message">Impossible d'ouvrir cette photo — elle est peut-être vide, corrompue, n'est pas une image valide ou n'est pas téléchargée (OneDrive)</string>
     <string name="discard_button">Ignorer</string>
     <string name="unsaved_align_changes_dialog_title">Modifications non enregistrées</string>
     <string name="unsaved_align_changes_dialog_message">Vous avez un alignement ou une correction de zoom non enregistré(e). L'enregistrer avant de continuer ?</string>
@@ -174,6 +178,7 @@
     <string name="gallery_image_count">%1$d élément(s)</string>
     <string name="gallery_picker_selected_count">%1$d sélectionnée(s)</string>
     <string name="gallery_picker_confirm_button">Valider la sélection</string>
+    <string name="gallery_change_folder_content_description">Changer de dossier</string>
     <string name="gallery_favorite_content_description">Favori</string>
     <string name="gallery_legend_text_content_description">Cette photo a une légende texte</string>
     <string name="gallery_legend_image_content_description">Cette photo a une légende image</string>

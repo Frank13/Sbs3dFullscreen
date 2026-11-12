@@ -6,6 +6,7 @@ import fr.camera3d.camera.feature_edit.autoalign.extractParametersFromMatrix
 import fr.camera3d.camera.shared.nextAvailableSuffixedFilename
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.opencv.core.Core
+import org.opencv.core.CvException
 import org.opencv.core.Mat
 import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfDMatch
@@ -18,6 +19,7 @@ import org.opencv.geometry.Geometry
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import java.io.File
+import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -80,12 +82,16 @@ object AutoAlign {
      * [Imgcodecs.imread] directly - imread takes a narrow (non-Unicode) path on Windows, so it
      * silently fails to open any path containing non-ASCII characters (e.g. accented folder/file
      * names), returning an empty Mat that then blows up downstream in cvtColor.
+     * imdecode itself also returns an empty Mat rather than throwing on undecodable bytes (truncated/
+     * corrupt file, 0-byte cloud placeholder, unsupported format), so that - and any read error,
+     * e.g. an online-only OneDrive file while OneDrive isn't running - is turned into a
+     * [PhotoReadException] here, which callers treat as a plain "couldn't read this photo" failure.
      */
     internal fun fileToMat(file: File): Mat {
         ensureOpenCvLoaded()
         if (Mpo.isMpoFile(file)) return mpoToMat(file)
-        val bytes = file.readBytes()
-        val decoded = Imgcodecs.imdecode(MatOfByte(*bytes), Imgcodecs.IMREAD_COLOR)
+        val bytes = readPhotoBytes(file)
+        val decoded = decodeOrThrow(bytes, file)
         val withAlpha = Mat()
         Imgproc.cvtColor(decoded, withAlpha, Imgproc.COLOR_BGR2BGRA)
         decoded.release()
@@ -101,10 +107,15 @@ object AutoAlign {
      * result under [nextAvailableFile]'s ".sbs.jpg" naming for an MPO source.
      */
     private fun mpoToMat(file: File): Mat {
-        val frames = Mpo.splitFrames(file.readBytes())
+        val frames = Mpo.splitFrames(readPhotoBytes(file))
         require(frames.size >= 2) { "MPO file has fewer than 2 frames: ${file.name}" }
-        val left = Imgcodecs.imdecode(MatOfByte(*frames[0]), Imgcodecs.IMREAD_COLOR)
-        val right = Imgcodecs.imdecode(MatOfByte(*frames[1]), Imgcodecs.IMREAD_COLOR)
+        val left = decodeOrThrow(frames[0], file)
+        val right = try {
+            decodeOrThrow(frames[1], file)
+        } catch (e: PhotoReadException) {
+            left.release()
+            throw e
+        }
         val combined = Mat()
         Core.hconcat(listOf(left, right), combined)
         left.release()
@@ -113,6 +124,35 @@ object AutoAlign {
         Imgproc.cvtColor(combined, withAlpha, Imgproc.COLOR_BGR2BGRA)
         combined.release()
         return withAlpha
+    }
+
+    /** The photo couldn't be read from disk or decoded - see [fileToMat]. */
+    class PhotoReadException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+    private fun readPhotoBytes(file: File): ByteArray =
+        try {
+            file.readBytes()
+        } catch (e: IOException) {
+            throw PhotoReadException("Cannot read ${file.name}: ${e.message}", e)
+        }
+
+    /**
+     * [Imgcodecs.imdecode] to BGR, throwing [PhotoReadException] instead of OpenCV's two failure
+     * modes - see [fileToMat]: an empty buffer (0-byte file) makes imdecode itself throw a
+     * CvException ("!buf.empty()" assertion), while undecodable bytes return an empty Mat.
+     */
+    private fun decodeOrThrow(bytes: ByteArray, file: File): Mat {
+        if (bytes.isEmpty()) throw PhotoReadException("Empty file (0 bytes): ${file.name}")
+        val decoded = try {
+            Imgcodecs.imdecode(MatOfByte(*bytes), Imgcodecs.IMREAD_COLOR)
+        } catch (e: CvException) {
+            throw PhotoReadException("Cannot decode image (${bytes.size} bytes): ${file.name}", e)
+        }
+        if (decoded.empty()) {
+            decoded.release()
+            throw PhotoReadException("Cannot decode image (${bytes.size} bytes): ${file.name}")
+        }
+        return decoded
     }
 
     internal fun matToImageBitmap(mat: Mat): ImageBitmap {

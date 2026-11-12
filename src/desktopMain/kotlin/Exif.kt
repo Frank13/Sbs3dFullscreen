@@ -116,8 +116,10 @@ object Exif {
      * process kill mid-write can't corrupt the original photo.
      */
     fun modifyExifList(file: File, tagValuePairs: List<Pair<String, String>>, onError: ((String) -> Unit)? = null): Boolean {
-        val tempFile = File.createTempFile("exif_temp_", ".jpg", file.parentFile)
+        // Created inside the try: it throws too (e.g. a read-only or unavailable folder).
+        var tempFile: File? = null
         try {
+            tempFile = File.createTempFile("exif_temp_", ".jpg", file.parentFile)
             val existingMetadata = jpegMetadataOf(file)
             val outputSet: TiffOutputSet = existingMetadata?.exif?.outputSet ?: TiffOutputSet()
 
@@ -152,7 +154,7 @@ object Exif {
             onError?.invoke(e.message ?: e.toString())
             return false
         } finally {
-            tempFile.delete()
+            tempFile?.delete()
         }
     }
 
@@ -215,8 +217,9 @@ object Exif {
             return message
         }
         stripStaleDimensionData(outputSet)
-        val tempFile = File.createTempFile("exif_temp_", ".jpg", dest.parentFile)
+        var tempFile: File? = null
         return try {
+            tempFile = File.createTempFile("exif_temp_", ".jpg", dest.parentFile)
             FileOutputStream(tempFile).use { out -> ExifRewriter().updateExifMetadataLossless(dest, out, outputSet) }
             replaceAtomically(tempFile, dest)
             null
@@ -225,7 +228,7 @@ object Exif {
             System.err.println("Exif.copyExif: failed to write EXIF onto '${dest.path}': $message")
             message
         } finally {
-            tempFile.delete()
+            tempFile?.delete()
         }
     }
 

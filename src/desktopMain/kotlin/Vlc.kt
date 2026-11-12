@@ -56,8 +56,9 @@ internal interface VlcFormatCallback : Callback {
     fun invoke(opaque: Pointer?, chroma: Pointer, width: Pointer, height: Pointer, pitches: Pointer, lines: Pointer): Int
 }
 
-// libvlc_event_e values (libVLC 3.x) for the two events this app listens to.
+// libvlc_event_e values (libVLC 3.x) for the events this app listens to.
 private const val EventMediaPlayerEndReached = 265
+private const val EventMediaPlayerEncounteredError = 266
 private const val EventMediaPlayerPositionChanged = 268
 
 // libvlc_event_t is { int type; void *p_obj; union u } - on 64-bit the union (whose first member for
@@ -157,6 +158,17 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
     /** Called on a libVLC thread when playback reaches the end (even when repeating). */
     var onFinished: (() -> Unit)? = null
 
+    /**
+     * Called on a libVLC thread when the file can't be played: libVLC reports an error, or playback
+     * "ends" before a single frame was displayed (a 0-byte/corrupt file, or an online-only OneDrive
+     * file while OneDrive isn't running). Never followed by a repeat, which would only restart the
+     * same failure in an endless loop.
+     */
+    var onError: (() -> Unit)? = null
+
+    // Set by setFrameListener's display callback - see onError.
+    @Volatile private var hasDisplayedFrame = false
+
     // JNA only keeps a weak reference to callbacks: hold them here so they aren't collected while
     // libVLC may still call them.
     private var lockCallback: VlcLockCallback? = null
@@ -168,7 +180,12 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
         override fun invoke(event: Pointer, userData: Pointer?) {
             when (event.getInt(0)) {
                 EventMediaPlayerPositionChanged -> onPositionChanged?.invoke(event.getFloat(EventUnionOffset))
+                EventMediaPlayerEncounteredError -> onError?.invoke()
                 EventMediaPlayerEndReached -> {
+                    if (!hasDisplayedFrame) {
+                        onError?.invoke()
+                        return
+                    }
                     onFinished?.invoke()
                     if (repeat) Vlc.worker.execute {
                         if (!released) {
@@ -185,6 +202,7 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
         val manager = lib.libvlc_media_player_event_manager(handle)
         lib.libvlc_event_attach(manager, EventMediaPlayerPositionChanged, eventCallback, null)
         lib.libvlc_event_attach(manager, EventMediaPlayerEndReached, eventCallback, null)
+        lib.libvlc_event_attach(manager, EventMediaPlayerEncounteredError, eventCallback, null)
     }
 
     /**
@@ -225,6 +243,7 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
                 val currentBuffer = buffer ?: return
                 val pixels = (currentImage.raster.dataBuffer as DataBufferInt).data
                 currentBuffer.read(0, pixels, 0, pixels.size)
+                hasDisplayedFrame = true
                 onFrame(currentImage)
             }
         }

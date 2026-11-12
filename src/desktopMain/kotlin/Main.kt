@@ -522,24 +522,33 @@ private fun runApp(args: Array<String>) = application {
 
                                     Screen.About -> AboutScreen(onBack = { viewModel.closeAbout() })
 
-                                    Screen.Gallery -> GalleryScreen(
-                                        groups = viewModel.gallery.groups,
-                                        expandedGroups = viewModel.gallery.expandedGroups,
-                                        listState = galleryListState,
-                                        scrollTarget = viewModel.gallery.scrollTarget,
-                                        onScrollTargetConsumed = { viewModel.consumeGalleryScrollTarget() },
-                                        onToggleGroup = { path -> viewModel.toggleGalleryGroup(path) },
-                                        onOpenImage = { group, index ->
-                                            if (viewModel.openGalleryImage(group, index)) enterFullscreen()
-                                        },
-                                        onBack = {
-                                            if (viewModel.gallery.pickerMode) viewModel.cancelGalleryPicker() else viewModel.closeGallery()
-                                        },
-                                        pickerMode = viewModel.gallery.pickerMode,
-                                        selectedFiles = viewModel.gallery.selectedFiles,
-                                        onToggleSelect = { file -> viewModel.toggleGallerySelection(file) },
-                                        onConfirmSelection = { coroutineScope.launch { viewModel.confirmGalleryPicker() } },
-                                    )
+                                    Screen.Gallery -> {
+                                        val changeFolderDialogTitle = stringResource(Res.string.playlist_add_photos_directory_dialog_title)
+                                        GalleryScreen(
+                                            groups = viewModel.gallery.groups,
+                                            expandedGroups = viewModel.gallery.expandedGroups,
+                                            listState = galleryListState,
+                                            scrollTarget = viewModel.gallery.scrollTarget,
+                                            onScrollTargetConsumed = { viewModel.consumeGalleryScrollTarget() },
+                                            onToggleGroup = { path -> viewModel.toggleGalleryGroup(path) },
+                                            onOpenImage = { group, index ->
+                                                if (viewModel.openGalleryImage(group, index)) enterFullscreen()
+                                            },
+                                            onBack = {
+                                                if (viewModel.gallery.pickerMode) viewModel.cancelGalleryPicker() else viewModel.closeGallery()
+                                            },
+                                            pickerMode = viewModel.gallery.pickerMode,
+                                            selectedFiles = viewModel.gallery.selectedFiles,
+                                            onToggleSelect = { file -> viewModel.toggleGallerySelection(file) },
+                                            onConfirmSelection = { coroutineScope.launch { viewModel.confirmGalleryPicker() } },
+                                            onChangeFolder = {
+                                                chooseDirectory(window = window, title = changeFolderDialogTitle)?.let { folder ->
+                                                    viewModel.changeGalleryPickerFolder(folder)
+                                                    coroutineScope.launch { galleryListState.scrollToItem(0) }
+                                                }
+                                            },
+                                        )
+                                    }
 
                                     Screen.PlaylistList -> PlaylistsScreen(
                                         playlists = viewModel.playlistEditor.all,
@@ -570,7 +579,9 @@ private fun runApp(args: Array<String>) = application {
                                             },
                                             onRemoveSoundtrackItem = viewModel::removeSoundtrackItem,
                                             onAddPhotos = {
-                                                chooseDirectory(window = window, title = addPhotosDirectoryDialogTitle)?.let { folder ->
+                                                // Straight to the gallery picker on the gallery's folder; the folder
+                                                // chooser only shows the first time, before any gallery folder is known.
+                                                (rememberedGalleryDirectory() ?: chooseDirectory(window = window, title = addPhotosDirectoryDialogTitle))?.let { folder ->
                                                     viewModel.openGalleryForPicking(folder)
                                                 }
                                             },

@@ -55,7 +55,6 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -76,7 +75,6 @@ import sbs3dViewer.resources.Res
 import sbs3dViewer.resources.align_save_button
 import sbs3dViewer.resources.cancel_button
 import sbs3dViewer.resources.discard_button
-import sbs3dViewer.resources.image_decode_failed_message
 import sbs3dViewer.resources.image_settings_exclude_stereo_issues_toggle_label
 import sbs3dViewer.resources.image_settings_exit_fullscreen_label
 import sbs3dViewer.resources.image_settings_favorites_only_toggle_label
@@ -261,6 +259,7 @@ fun ImageScreen(
     // toggled closed (pressing Shift/Ctrl again), which removes Exif3dInfoPanel (and any state
     // it holds) from composition.
     var exifUpdateToken by remember(file) { mutableStateOf(0) }
+    var exifUpdateFailedToken by remember(file) { mutableStateOf(0) }
 
     // Opened by the settings menu's "Share" row (see SettingsMenuHalf) - which ShareType the
     // dialog offers is fixed, so this is just a visibility flag, closed as soon as a choice (or
@@ -522,9 +521,6 @@ fun ImageScreen(
                         ClickAlignPointsOverlay(bitmap, halveLeftRightImages, shrinkControls, copyAlignLeftPoint, copyAlignRightPoint)
                     }
                 }
-                if (decodeFailed && imageBitmap == null) {
-                    DecodeFailedMessage()
-                }
                 val dragStart = cropDragStartPx
                 val dragCurrent = cropDragCurrentPx
                 if (dragStart != null && dragCurrent != null) {
@@ -563,6 +559,7 @@ fun ImageScreen(
                         shrinkControls = shrinkControls,
                         onDialogOpenChanged = { infoPanelDialogOpen = it },
                         onExifUpdated = { exifUpdateToken++ },
+                        onExifUpdateFailed = { exifUpdateFailedToken++ },
                         tools = PhotoToolsUiState(
                             hasAlignedPreview = hasAlignedPreview,
                             isAligning = isAligning,
@@ -576,12 +573,15 @@ fun ImageScreen(
                             hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
                             copyFromImageMode = copyMode,
                             hasCopyPainting = hasCopyPainting,
+                            photoUnreadable = decodeFailed && imageBitmap == null,
                         ),
                         actions = photoToolActions,
                         showEditTools = showEditTools,
                     )
                 }
+                DecodeFailedToast(visible = decodeFailed && imageBitmap == null)
                 ExifUpdatedToast(exifUpdateToken)
+                ExifUpdateFailedToast(exifUpdateFailedToken)
                 AlignResultToast(alignToast)
                 SaveResultToast(saveToast)
                 ShareResultToast(shareToast)
@@ -633,25 +633,6 @@ fun ImageScreen(
             }
         }
     }
-}
-
-/**
- * Shown in place of the photo when ImageDecodeCache.load couldn't decode [file] at all (a
- * corrupt/truncated JPEG, or a file that isn't actually an image despite its extension) - see the
- * decodeFailed state above. A single centered message rather than the per-half-duplicated,
- * depth-shifted treatment every other overlay in this app gets (see CLAUDE.md's stereo notes):
- * there's no photo underneath to fuse in 3D here, so it reads more like WelcomeScreen's or
- * FullscreenLoadingOverlay's plain single-copy text than like an annotation on top of a photo.
- */
-@Composable
-private fun DecodeFailedMessage() {
-    Text(
-        text = stringResource(Res.string.image_decode_failed_message),
-        color = Color.White,
-        fontSize = 20.sp,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(32.dp),
-    )
 }
 
 /**

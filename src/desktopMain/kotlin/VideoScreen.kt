@@ -47,7 +47,9 @@ import sbs3dViewer.resources.image_settings_audio_output_label
 import sbs3dViewer.resources.image_settings_exit_fullscreen_label
 import sbs3dViewer.resources.image_settings_next_label
 import sbs3dViewer.resources.image_settings_previous_label
+import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 
 // Same sign convention as InfoPanelShiftPercent/CursorShiftPercent (negative = toward the
 // viewer): -1% makes the controls read as floating just in front of the screen.
@@ -64,6 +66,8 @@ private val PlayPauseButtonSize = 32.dp
 // Same rationale as ImageScreen's SettingsMenuShiftPercent - UI chrome, not part of the video
 // itself, so it reads as pinned to the screen glass rather than floating.
 private const val VideoSettingsMenuShiftPercent = 0f
+
+private val VideoFailedAdvanceDelay = 4.seconds
 
 /**
  * Mutable playback state backing [VideoScreen]/[PlaylistVideoSlide], built by [rememberVideoPlayerState].
@@ -82,6 +86,9 @@ private class VideoPlayerState {
     // only - the actual seek is requested once on release (onScrubEnd), not on every drag frame.
     var dragProgress by mutableStateOf<Float?>(null)
     var paused by mutableStateOf(false)
+
+    // True once libVLC couldn't play the file at all - see VlcPlayer.onError.
+    var playbackFailed by mutableStateOf(false)
     var mediaPlayer: VlcPlayer? = null
 
     // The mmdevice (Windows) devices this player can send audio to, enumerated once from the
@@ -141,6 +148,7 @@ private fun rememberVideoPlayerState(file: File, repeat: Boolean, audioOutputDev
         player.setRepeat(repeat)
         player.onPositionChanged = { newPosition -> state.progress = newPosition.coerceIn(0f, 1f) }
         player.onFinished = { if (!repeat) onEnded() }
+        player.onError = { state.playbackFailed = true }
         state.mediaPlayer = player
         player.play(file.absolutePath, noAudio = isMuted)
 
@@ -159,6 +167,18 @@ private fun rememberVideoPlayerState(file: File, repeat: Boolean, audioOutputDev
     // on the Compose thread, not libVLC's event thread, so no MediaPlayer.submit() is needed.
     LaunchedEffect(state, audioOutputDeviceId) {
         state.mediaPlayer?.setOutputDevice(null, audioOutputDeviceId)
+    }
+
+    // An unplayable video never reaches onFinished, so an automated slideshow would otherwise stay
+    // stuck on it forever: advance once VideoFailedToast has had time to be read.
+    LaunchedEffect(state, state.playbackFailed) {
+        if (state.playbackFailed) {
+            Analytics.logEvent("app_error", mapOf("type" to "video_playback"))
+            if (!repeat) {
+                delay(VideoFailedAdvanceDelay)
+                onEnded()
+            }
+        }
     }
 
     return state
@@ -190,6 +210,7 @@ private fun VideoPlayerSurface(
                     VideoFrame(bitmap, halveLeftRightImages, isHalfWidth)
                 }
             }
+            VideoFailedToast(visible = state.playbackFailed && state.frameBitmap == null)
             if (LocalCursorVisible.current) {
                 StereoVideoControls(
                     state.paused, state.onTogglePause, state.progress, state.dragProgress,

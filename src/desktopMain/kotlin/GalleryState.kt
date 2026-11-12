@@ -80,6 +80,17 @@ class GalleryState {
     }
 
     /**
+     * Rescans the Gallery on another [folder] (the picker's "change folder" button), keeping
+     * [pickerMode] and [selectedFiles] - so photos picked in several folders can be added at once.
+     */
+    fun changeFolder(folder: File) {
+        root = folder
+        val scanned = scanGalleryDirectory(folder)
+        groups = scanned
+        expandedGroups = scanned.map { it.relativePath }.toSet()
+    }
+
+    /**
      * Re-scans [root] so files saved (a Save in any ImageView edit tool) or deleted while in
      * ImageView show up/disappear here - [open]'s scan is otherwise never repeated. Groups the
      * user had collapsed stay collapsed; groups that didn't exist before start expanded, like in

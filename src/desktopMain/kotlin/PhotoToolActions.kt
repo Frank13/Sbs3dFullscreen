@@ -56,6 +56,9 @@ data class PhotoToolsUiState(
     val hasClickAlignPoints: Boolean = false,
     val copyFromImageMode: Boolean = false,
     val hasCopyPainting: Boolean = false,
+    // The photo couldn't be decoded (0-byte/corrupt/offline OneDrive file - see ImageScreen's
+    // decodeFailed): every edit tool would only fail on it, so only Delete is offered.
+    val photoUnreadable: Boolean = false,
 ) {
     /** True while any tool owns the panel (only its Cancel/Save pair shows). */
     val anyToolActive: Boolean get() = manualAlignMode || cropMode || spotIssuesMode || clickAlignMode || copyFromImageMode || hasAlignedPreview

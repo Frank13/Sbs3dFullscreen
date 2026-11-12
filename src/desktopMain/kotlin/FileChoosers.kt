@@ -60,6 +60,9 @@ fun chooseDirectory(window: java.awt.Window, title: String): File? {
     return if (approved) chooser.selectedFile else null
 }
 
+/** The folder [chooseDirectory] last browsed, or null if it was never used or the folder no longer exists. */
+fun rememberedGalleryDirectory(): File? = lastGalleryDirectory.getSaved()
+
 /** Every JFileChooser in the app must be created through this, see [SafeFileSystemView]. */
 fun newFileChooser(directory: File? = null): JFileChooser = JFileChooser(directory, SafeFileSystemView)
 
@@ -128,11 +131,13 @@ private val lastMusicDirectory = LastDirectoryPreference("lastMusicDirectory", d
 private class LastDirectoryPreference(private val key: String, private val defaultFolderName: String = "Pictures") {
     private val prefs = Preferences.userNodeForPackage(LastDirectoryPreference::class.java)
 
+    /** The remembered folder, or null if none was ever saved or it no longer exists. */
+    fun getSaved(): File? = prefs.get(key, null)?.let(::File)?.takeIf { it.isDirectory }
+
     fun getOrDefault(): File {
-        val saved = prefs.get(key, null)?.let(::File)
         val pictures = File(System.getProperty("user.home"), defaultFolderName)
         val home = File(System.getProperty("user.home"))
-        return sequenceOf(saved, pictures, home).filterNotNull().firstOrNull { it.isDirectory } ?: home
+        return getSaved() ?: sequenceOf(pictures, home).firstOrNull { it.isDirectory } ?: home
     }
 
     fun save(directory: File?) {

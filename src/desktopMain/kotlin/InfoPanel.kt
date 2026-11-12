@@ -103,6 +103,11 @@ import sbs3dViewer.resources.dialog_title_warning
 import sbs3dViewer.resources.enter_the_picture_legend
 import sbs3dViewer.resources.save_finished_exif_lost
 import sbs3dViewer.resources.save_finished_failed
+import sbs3dViewer.resources.photo_read_failed
+import sbs3dViewer.resources.image_decode_failed_message
+import sbs3dViewer.resources.video_playback_failed_message
+import sbs3dViewer.resources.photo_metadata_read_failed
+import sbs3dViewer.resources.exif_update_failed
 import sbs3dViewer.resources.save_finished_success
 import sbs3dViewer.resources.share_failed_toast
 import sbs3dViewer.resources.spot_stereo_issues_button
@@ -140,7 +145,14 @@ private val IconTextSpacing = 6.dp
 // LegendTextDialog) to compensate; full-size controls already read fine unshrunk.
 private val ShrunkControlsFontSize = 18.sp
 
-private data class Exif3dSummary(val desc: Desc3d, val copyright: String, val comment: String, val focalLengthIn35mmFilm: Int?)
+/** [readFailed]: the photo's EXIF couldn't be read at all, so the other fields are just empty placeholders. */
+private data class Exif3dSummary(
+    val desc: Desc3d,
+    val copyright: String,
+    val comment: String,
+    val focalLengthIn35mmFilm: Int?,
+    val readFailed: Boolean = false,
+)
 
 // Mirrors Android's LegendIconType (fr.camera3d.camera.common.ui_components.LegendIcon): which
 // bubble glyph to show for the legend button, derived the same way FullscreenViewerFragment
@@ -168,6 +180,7 @@ fun InfoPanel(
     shrinkControls: Boolean = false,
     onDialogOpenChanged: (Boolean) -> Unit = {},
     onExifUpdated: () -> Unit = {},
+    onExifUpdateFailed: () -> Unit = {},
     tools: PhotoToolsUiState = PhotoToolsUiState(),
     actions: PhotoToolActions = PhotoToolActions(),
     // False while a playlist plays: its photo list is a curated index on disk, so the align/crop/
@@ -177,44 +190,62 @@ fun InfoPanel(
 ) {
     // Read off the UI thread and show a spinner meanwhile: EXIF I/O is normally fast, but this
     // guards against a slow/network drive stalling the toggled-open HUD from appearing at all.
+    // Unlike Exif3d, Exif's getters throw on an unreadable file (corrupt, or an online-only OneDrive
+    // file while OneDrive isn't running) - shown as an explicit message (see InfoPanelContent)
+    // rather than empty fields that would read as "this photo has no metadata", or a crash.
     var summary by remember(file) { mutableStateOf<Exif3dSummary?>(null) }
     LaunchedEffect(file) {
         summary = withContext(Dispatchers.IO) {
-            Exif3dSummary(
-                desc = Exif3d.get3dCameraCharacteristics(file) ?: Desc3d(),
-                copyright = Exif.getExifCopyright(file),
-                comment = Exif.getExifUserComment(file) ?: "",
-                focalLengthIn35mmFilm = Exif.getExifFocalLengthIn35mmFilm(file),
-            )
+            runCatching {
+                Exif3dSummary(
+                    desc = Exif3d.get3dCameraCharacteristics(file) ?: Desc3d(),
+                    copyright = Exif.getExifCopyright(file),
+                    comment = Exif.getExifUserComment(file) ?: "",
+                    focalLengthIn35mmFilm = Exif.getExifFocalLengthIn35mmFilm(file),
+                )
+            }.getOrElse { Exif3dSummary(Desc3d(), copyright = "", comment = "", focalLengthIn35mmFilm = null, readFailed = true) }
         }
     }
     val coroutineScope = rememberCoroutineScope()
+    // Shows [optimistic] at once, then writes it in the background: the Exif3d setters return false
+    // (never throw) when the file can't be written - e.g. read-only, or an online-only OneDrive file
+    // while OneDrive isn't running - in which case the icon reverts and onExifUpdateFailed's toast
+    // says so, instead of "EXIF updated" for a change that never reached the file.
+    fun writeExif(previous: Exif3dSummary, optimistic: Exif3dSummary, write: () -> Boolean) {
+        summary = optimistic
+        coroutineScope.launch(Dispatchers.IO) {
+            val written = write()
+            withContext(Dispatchers.Main) {
+                if (written) {
+                    onExifUpdated()
+                } else {
+                    if (summary == optimistic) summary = previous
+                    Analytics.logEvent("app_error", mapOf("type" to "exif_write"))
+                    onExifUpdateFailed()
+                }
+            }
+        }
+    }
     val onToggleFavorite: () -> Unit = onToggleFavorite@{
         val current = summary ?: return@onToggleFavorite
         val newFavorite = !current.desc.favorite
-        summary = current.copy(desc = current.desc.copy(favorite = newFavorite))
         Analytics.logEvent("favorite_toggle", mapOf("action" to if (newFavorite) "add" else "remove"))
-        coroutineScope.launch(Dispatchers.IO) {
+        writeExif(current, current.copy(desc = current.desc.copy(favorite = newFavorite))) {
             Exif3d.setFavoriteInExif(file, newFavorite)
-            withContext(Dispatchers.Main) { onExifUpdated() }
         }
     }
     val onSetWarning: (Boolean, String) -> Unit = onSetWarning@{ warning, comment ->
         val current = summary ?: return@onSetWarning
         val newDesc = if (warning) current.desc.copy(warning = true, warningComment = comment)
         else current.desc.copy(warning = false, warningComment = "")
-        summary = current.copy(desc = newDesc)
-        coroutineScope.launch(Dispatchers.IO) {
+        writeExif(current, current.copy(desc = newDesc)) {
             Exif3d.setWarningInExif(file, warning, comment.takeIf { warning })
-            withContext(Dispatchers.Main) { onExifUpdated() }
         }
     }
     val onSetLegend: (String) -> Unit = onSetLegend@{ text ->
         val current = summary ?: return@onSetLegend
-        summary = current.copy(comment = text, desc = current.desc.copy(hasLegend = false))
-        coroutineScope.launch(Dispatchers.IO) {
+        writeExif(current, current.copy(comment = text, desc = current.desc.copy(hasLegend = false))) {
             Exif3d.setTextLegendInExif(file, text)
-            withContext(Dispatchers.Main) { onExifUpdated() }
         }
     }
 
@@ -630,6 +661,8 @@ private fun AlignButtonsRow(
     // clickAlignMode/cropMode/spotIssuesMode/manualAlignMode.
     val noToolActive = !manualAlignMode && !cropMode && !spotIssuesMode && !clickAlignMode && !copyFromImageMode && !hasAlignedPreview
     val hideOtherButtons = noToolActive && !manualAlignSubmenuExpanded && !copySubmenuExpanded
+    // Gates the buttons that start an edit tool (not Delete) - see PhotoToolsUiState.photoUnreadable.
+    val showEditToolButtons = hideOtherButtons && !tools.photoUnreadable
     Column {
         // FlowRow (not Row) + widthIn(max = ...) so this wraps onto multiple lines instead of
         // overflowing/clipping past the panel's edge - there are up to 6 buttons in the "no tool
@@ -646,7 +679,7 @@ private fun AlignButtonsRow(
             // canFocus = false for the same reason as the favorite icon above: this HUD can be
             // toggled closed by pressing Shift/Ctrl again, so a click stealing keyboard focus would
             // break Escape/arrow key handling on Main.kt's root Box as soon as it does.
-            if (hideOtherButtons) {
+            if (showEditToolButtons) {
                 // Disabled for the whole duration of a running auto-align/correct-zoom/save task
                 // (see AppViewModel.isAligning) so a click can't re-trigger or overlap it.
                 Button(
@@ -672,7 +705,7 @@ private fun AlignButtonsRow(
             // choices - keyboard nudge vs. click matching points (see ClickAlign.kt) - rather than
             // starting a tool directly. The chevron (flipped while open) is the same "this expands"
             // affordance a standard dropdown uses, so it doesn't read as just another action button.
-            if (noToolActive && !copySubmenuExpanded) {
+            if (noToolActive && !copySubmenuExpanded && !tools.photoUnreadable) {
                 Button(
                     onClick = onManualAlignSubmenuToggle,
                     enabled = !isAligning,
@@ -762,7 +795,7 @@ private fun AlignButtonsRow(
                 Text(stringResource(Res.string.align_save_button), fontSize = buttonFontSize)
             }
         }
-        if (hideOtherButtons) {
+        if (showEditToolButtons) {
             Button(
                 onClick = onStartCrop,
                 enabled = !isAligning,
@@ -798,7 +831,7 @@ private fun AlignButtonsRow(
         }
         // "Copy from image" opens its own dropdown (left to right / right to left), same affordance
         // and same "other buttons hide while it's open" behavior as "Manual Align" above.
-        if (noToolActive && !manualAlignSubmenuExpanded) {
+        if (noToolActive && !manualAlignSubmenuExpanded && !tools.photoUnreadable) {
             Button(
                 onClick = onCopySubmenuToggle,
                 enabled = !isAligning,
@@ -838,7 +871,7 @@ private fun AlignButtonsRow(
                 Text(stringResource(Res.string.align_save_button), fontSize = buttonFontSize)
             }
         }
-        if (hideOtherButtons) {
+        if (showEditToolButtons) {
             Button(
                 onClick = onStartSpotIssues,
                 enabled = !isAligning,
@@ -1015,6 +1048,19 @@ private fun InfoPanelContent(
     onWarningToggleRequest: (Boolean) -> Unit,
     onLegendClick: () -> Unit,
 ) {
+    if (summary.readFailed) {
+        // No favorite/warning/legend icons either: their writes would fail the same way.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = WarningColor,
+                modifier = Modifier.padding(end = IconTextSpacing).size(22.dp),
+            )
+            ShadowedText(stringResource(Res.string.photo_metadata_read_failed))
+        }
+        return
+    }
     val desc = summary.desc
     val has3dData = desc.baseMm != -1 || desc.triggerMode.isNotEmpty() || desc.extMode.isNotEmpty() ||
         desc.deviceCount != 2 || summary.focalLengthIn35mmFilm != null
@@ -1152,6 +1198,16 @@ private fun <T : Any> StereoToast(
         delay(duration)
         visible = false
     }
+    StereoToastBox(visible, shiftPercent, content)
+}
+
+/**
+ * [StereoToast]'s per-half-duplicated, depth-shifted look without its timer: shown for as long as
+ * [visible] is true - for messages that must stay up while their condition lasts (see
+ * [ClickAlignPreviewHintToast], [DecodeFailedToast]).
+ */
+@Composable
+private fun StereoToastBox(visible: Boolean, shiftPercent: Float, content: @Composable () -> Unit) {
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val halfWidth = maxWidth / 2
@@ -1161,6 +1217,38 @@ private fun <T : Any> StereoToast(
                 Box(Modifier.fillMaxSize().weight(1f)) { StereoToastHalf(offsetX = shift / 2, content) }
             }
         }
+    }
+}
+
+/**
+ * Shown in place of the photo for as long as ImageDecodeCache.load couldn't decode it at all (a
+ * 0-byte, corrupt/truncated or not-actually-an-image file, or an online-only OneDrive file while
+ * OneDrive isn't running) - see ImageScreen's decodeFailed state. A 3D toast like every other
+ * message in ImageView, not a single centered Text: that would straddle the SBS midline, so each
+ * eye would only see half of it.
+ */
+@Composable
+fun DecodeFailedToast(visible: Boolean, shiftPercent: Float = InfoPanelShiftPercent) {
+    StereoToastBox(visible, shiftPercent) {
+        Text(
+            stringResource(Res.string.image_decode_failed_message),
+            color = WarningColor,
+            fontSize = 18.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** [DecodeFailedToast]'s video counterpart: libVLC couldn't play the file at all (see VlcPlayer.onError). */
+@Composable
+fun VideoFailedToast(visible: Boolean, shiftPercent: Float = InfoPanelShiftPercent) {
+    StereoToastBox(visible, shiftPercent) {
+        Text(
+            stringResource(Res.string.video_playback_failed_message),
+            color = WarningColor,
+            fontSize = 18.sp,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -1195,6 +1283,14 @@ fun ExifUpdatedToast(updateToken: Int, shiftPercent: Float = InfoPanelShiftPerce
     }
 }
 
+/** [ExifUpdatedToast]'s failure counterpart: an EXIF write (favorite/warning/legend) didn't reach the file. */
+@Composable
+fun ExifUpdateFailedToast(failureToken: Int, shiftPercent: Float = InfoPanelShiftPercent) {
+    StereoToast(trigger = failureToken.takeIf { it != 0 }, shiftPercent = shiftPercent) {
+        Text(stringResource(Res.string.exif_update_failed), color = WarningColor, fontSize = 18.sp)
+    }
+}
+
 /**
  * Brief confirmation flashed after an auto-align/correct-zoom attempt (triggered from either the
  * Exif3dInfoPanel buttons or the "A" keyboard shortcut in Main.kt) finishes, success or failure -
@@ -1207,7 +1303,9 @@ fun AlignResultToast(toast: AlignToast?, shiftPercent: Float = InfoPanelShiftPer
     StereoToast(trigger = toast, shiftPercent = shiftPercent) {
         val zoomScale = toast?.zoomScale
         val rotationDegrees = toast?.rotationDegrees
-        val message = if (toast?.success != true) {
+        val message = if (toast?.readFailed == true) {
+            stringResource(Res.string.photo_read_failed)
+        } else if (toast?.success != true) {
             stringResource(Res.string.align_finished_failed)
         } else if (zoomScale != null && rotationDegrees != null) {
             stringResource(
@@ -1237,6 +1335,7 @@ fun SaveResultToast(toast: SaveToast?, shiftPercent: Float = InfoPanelShiftPerce
     StereoToast(trigger = toast, shiftPercent = shiftPercent) {
         val exifError = toast?.exifError
         val message = when {
+            toast?.readFailed == true -> stringResource(Res.string.photo_read_failed)
             toast?.success != true -> stringResource(Res.string.save_finished_failed)
             exifError != null -> stringResource(Res.string.save_finished_exif_lost, exifError)
             else -> stringResource(Res.string.save_finished_success)
@@ -1304,22 +1403,7 @@ fun CopyFromImageGuideToast(guide: CopyFromImageGuide?, shiftPercent: Float = In
  */
 @Composable
 fun ClickAlignPreviewHintToast(visible: Boolean, shiftPercent: Float = InfoPanelShiftPercent) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val halfWidth = maxWidth / 2
-            val shift = halfWidth * shiftPercent
-            Row(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().weight(1f)) {
-                    StereoToastHalf(offsetX = -shift / 2) {
-                        Text(stringResource(Res.string.click_align_preview_hint), color = Color.White, fontSize = 18.sp)
-                    }
-                }
-                Box(Modifier.fillMaxSize().weight(1f)) {
-                    StereoToastHalf(offsetX = shift / 2) {
-                        Text(stringResource(Res.string.click_align_preview_hint), color = Color.White, fontSize = 18.sp)
-                    }
-                }
-            }
-        }
+    StereoToastBox(visible, shiftPercent) {
+        Text(stringResource(Res.string.click_align_preview_hint), color = Color.White, fontSize = 18.sp)
     }
 }

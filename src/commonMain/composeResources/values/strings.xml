@@ -152,6 +152,10 @@
     <string name="save_finished_success">Saved</string>
     <string name="save_finished_exif_lost">Saved, but original metadata could not be copied: %1$s</string>
     <string name="save_finished_failed">Save failed</string>
+    <string name="video_playback_failed_message">Couldn't play this video — it may be empty, corrupted, not a valid video file or not downloaded (OneDrive)</string>
+    <string name="photo_read_failed">Cannot read this photo — the file may be corrupt or not downloaded (OneDrive)</string>
+    <string name="photo_metadata_read_failed">Cannot read this photo's metadata — the file may be corrupt or not downloaded (OneDrive)</string>
+    <string name="exif_update_failed">Could not update this photo — the file may be read-only or not downloaded (OneDrive)</string>
     <string name="share_dialog_title">Share / Save as</string>
     <string name="share_section_image_type">Image type</string>
     <string name="share_section_action">Action</string>
@@ -163,7 +167,7 @@
     <string name="share_destination_downloads">Save to the Downloads folder</string>
     <string name="share_failed_toast">Couldn't open your email program</string>
     <string name="image_likely_not_3d_toast">This image doesn't look like a side-by-side 3D photo</string>
-    <string name="image_decode_failed_message">Couldn't open this photo — it may be corrupted or not a valid image file</string>
+    <string name="image_decode_failed_message">Couldn't open this photo — it may be empty, corrupted, not a valid image file or not downloaded (OneDrive)</string>
     <string name="discard_button">Discard</string>
     <string name="unsaved_align_changes_dialog_title">Unsaved changes</string>
     <string name="unsaved_align_changes_dialog_message">You have an unsaved alignment/zoom correction. Save it before continuing?</string>
@@ -174,6 +178,7 @@
     <string name="gallery_image_count">%1$d item(s)</string>
     <string name="gallery_picker_selected_count">%1$d selected</string>
     <string name="gallery_picker_confirm_button">Validate selection</string>
+    <string name="gallery_change_folder_content_description">Change folder</string>
     <string name="gallery_favorite_content_description">Favorite</string>
     <string name="gallery_legend_text_content_description">This photo has a text legend</string>
     <string name="gallery_legend_image_content_description">This photo has an image legend</string>

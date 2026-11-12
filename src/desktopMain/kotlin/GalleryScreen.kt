@@ -31,12 +31,14 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -71,6 +73,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
+import sbs3dViewer.resources.gallery_change_folder_content_description
 import sbs3dViewer.resources.gallery_empty
 import sbs3dViewer.resources.gallery_favorite_content_description
 import sbs3dViewer.resources.gallery_image_count
@@ -188,6 +191,7 @@ fun GalleryScreen(
     selectedFiles: Set<File> = emptySet(),
     onToggleSelect: (File) -> Unit = {},
     onConfirmSelection: () -> Unit = {},
+    onChangeFolder: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -208,6 +212,15 @@ fun GalleryScreen(
         },
         actionsContent = {
             if (pickerMode) {
+                IconButton(
+                    onClick = onChangeFolder,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f),
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Icon(Icons.Filled.FolderOpen, contentDescription = stringResource(Res.string.gallery_change_folder_content_description))
+                }
                 TextButton(
                     onClick = onConfirmSelection,
                     enabled = selectedFiles.isNotEmpty(),

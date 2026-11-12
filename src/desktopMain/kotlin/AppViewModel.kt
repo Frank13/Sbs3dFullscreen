@@ -30,8 +30,16 @@ internal val VideoExtensions = setOf("mp4", "mov", "mkv", "avi")
  * One auto-align/correct-zoom attempt's outcome - see AppViewModel.alignToast. [zoomScale]/
  * [rotationDegrees] are only populated for a successful [AlignKind.AFFINE] ("Correct Zoom") run -
  * see AutoAlign.AutoAlignResult - so AlignResultToast can report what was actually detected.
+ * [readFailed] marks a failure where the photo itself couldn't be read/decoded (see
+ * AppViewModel.tryReadPhoto), so the toast doesn't misreport it as "not enough matching features".
  */
-data class AlignToast(val success: Boolean, val token: Int, val zoomScale: Float? = null, val rotationDegrees: Float? = null)
+data class AlignToast(
+    val success: Boolean,
+    val token: Int,
+    val zoomScale: Float? = null,
+    val rotationDegrees: Float? = null,
+    val readFailed: Boolean = false,
+)
 
 /**
  * One "Save" button attempt's outcome - see AppViewModel.saveToast. [exifError] is only
@@ -39,9 +47,10 @@ data class AlignToast(val success: Boolean, val token: Int, val zoomScale: Float
  * pixels while still failing to carry the original's EXIF (in particular the Exif3d "3D
  * characteristics") across - see SavedFile/Exif.copyExif, whose failure message this carries
  * verbatim for display. Defaults to null so callers that save without going through that
- * pipeline (e.g. nothing currently) don't need to pass it.
+ * pipeline (e.g. nothing currently) don't need to pass it. [readFailed]: same meaning as
+ * [AlignToast.readFailed].
  */
-data class SaveToast(val success: Boolean, val token: Int, val exifError: String? = null)
+data class SaveToast(val success: Boolean, val token: Int, val exifError: String? = null, val readFailed: Boolean = false)
 
 /** Outcome of AppViewModel.importPlaylistFolder - the two failures get distinct WelcomeScreen dialogs. */
 enum class ImportPlaylistResult { IMPORTED, ALREADY_EXISTS, READ_FAILED }
@@ -392,6 +401,12 @@ class AppViewModel(initialFile: File?) {
         requireVlcIfGalleryHasVideo()
     }
 
+    /** Switches the Gallery picker to another [folder], keeping the photos already selected. */
+    fun changeGalleryPickerFolder(folder: File) {
+        gallery.changeFolder(folder)
+        requireVlcIfGalleryHasVideo()
+    }
+
     fun toggleGallerySelection(file: File) {
         gallery.toggleSelection(file)
     }
@@ -467,7 +482,7 @@ class AppViewModel(initialFile: File?) {
     }
 
     /** Applies a finished auto-align/correct-zoom attempt's result and (re)triggers [alignToast]. */
-    fun applyAlignedPreview(result: AutoAlign.AutoAlignResult?, kind: AlignKind? = null) {
+    fun applyAlignedPreview(result: AutoAlign.AutoAlignResult?, kind: AlignKind? = null, readFailed: Boolean = false) {
         photoTools.applyAlignedPreview(result, kind)
         alignToastCounter++
         alignToast = AlignToast(
@@ -475,6 +490,7 @@ class AppViewModel(initialFile: File?) {
             token = alignToastCounter,
             zoomScale = result?.zoomScale,
             rotationDegrees = result?.rotationDegrees,
+            readFailed = readFailed,
         )
     }
 
@@ -521,9 +537,9 @@ class AppViewModel(initialFile: File?) {
     }
 
     /** Flashes [saveToast] for one save attempt - shared by every "Save" path, share and keep-half delete. */
-    private fun reportSaveResult(success: Boolean, exifError: String? = null) {
+    private fun reportSaveResult(success: Boolean, exifError: String? = null, readFailed: Boolean = false) {
         saveToastCounter++
-        saveToast = SaveToast(success = success, exifError = exifError, token = saveToastCounter)
+        saveToast = SaveToast(success = success, exifError = exifError, token = saveToastCounter, readFailed = readFailed)
     }
 
     /**
@@ -532,6 +548,27 @@ class AppViewModel(initialFile: File?) {
      * [afterAttempt] (typically the tool's cancel, closing it whatever the outcome), and on success
      * logs [analyticsEvent] then inserts the new file right after the current one and jumps to it.
      */
+    /**
+     * Runs a photo-edit [block] that reads the photo through AutoAlign.fileToMat, turning a
+     * [AutoAlign.PhotoReadException] (unreadable/undecodable file, e.g. corrupt, 0-byte or an
+     * offline OneDrive placeholder) into a null [PhotoReadAttempt.value] with
+     * [PhotoReadAttempt.readFailed] set, so the failure toast says the photo couldn't be read
+     * instead of crashing. Any other [IOException] (e.g. the result can't be written next to the
+     * photo) is a plain failure, so it shows the generic "failed" toast.
+     */
+    private inline fun <T> tryReadPhoto(block: () -> T?): PhotoReadAttempt<T> =
+        try {
+            PhotoReadAttempt(block(), readFailed = false)
+        } catch (e: AutoAlign.PhotoReadException) {
+            System.err.println("Photo edit could not read the file: ${e.message}")
+            PhotoReadAttempt(null, readFailed = true)
+        } catch (e: IOException) {
+            System.err.println("Photo edit failed: ${e.message}")
+            PhotoReadAttempt(null, readFailed = false)
+        }
+
+    private data class PhotoReadAttempt<T>(val value: T?, val readFailed: Boolean)
+
     private suspend fun runSave(
         analyticsEvent: String,
         analyticsParams: Map<String, Any?> = emptyMap(),
@@ -541,8 +578,9 @@ class AppViewModel(initialFile: File?) {
         val file = currentImage
         isAligning = true
         try {
-            val saved = file?.let { withContext(Dispatchers.IO) { save(it) } }
-            reportSaveResult(saved != null, saved?.exifError)
+            val attempt = file?.let { withContext(Dispatchers.IO) { tryReadPhoto { save(it) } } }
+            val saved = attempt?.value
+            reportSaveResult(saved != null, saved?.exifError, readFailed = attempt?.readFailed == true)
             afterAttempt()
             if (saved == null) return
             Analytics.logEvent(analyticsEvent, analyticsParams)
@@ -638,8 +676,15 @@ class AppViewModel(initialFile: File?) {
         val left = photoTools.clickAlignLeftPoint
         val right = photoTools.clickAlignRightPoint
         if (file == null || left == null || right == null) return
-        val preview = withContext(Dispatchers.IO) { ClickAlign.computePreview(file, left, right, halveLeftRightImages) }
-        photoTools.applyClickAlignPreview(preview)
+        val attempt = withContext(Dispatchers.IO) { tryReadPhoto { ClickAlign.computePreview(file, left, right, halveLeftRightImages) } }
+        photoTools.applyClickAlignPreview(attempt.value)
+        if (attempt.readFailed) {
+            // Ends the Shift-held state so ClickAlignPreviewHintToast ("computing preview...")
+            // doesn't keep showing over this toast for a preview that will never come.
+            photoTools.updateClickAlignPreviewActive(false)
+            alignToastCounter++
+            alignToast = AlignToast(success = false, token = alignToastCounter, readFailed = true)
+        }
     }
 
     /**
@@ -714,8 +759,8 @@ class AppViewModel(initialFile: File?) {
         if (!canEditPhotos) return
         isAligning = true
         try {
-            val result = withContext(Dispatchers.IO) { AutoAlign.autoAlign(file, kind, useNewOpenCv5) }
-            applyAlignedPreview(result, kind)
+            val attempt = withContext(Dispatchers.IO) { tryReadPhoto { AutoAlign.autoAlign(file, kind, useNewOpenCv5) } }
+            applyAlignedPreview(attempt.value, kind, readFailed = attempt.readFailed)
         } finally {
             isAligning = false
         }
@@ -762,8 +807,9 @@ class AppViewModel(initialFile: File?) {
         isAligning = true
         try {
             if (keepHalf != null) {
-                val saved = withContext(Dispatchers.IO) { KeepHalf.saveHalf(file, keepHalf == KeepHalfSide.LEFT) }
-                reportSaveResult(saved != null, saved?.exifError)
+                val attempt = withContext(Dispatchers.IO) { tryReadPhoto { KeepHalf.saveHalf(file, keepHalf == KeepHalfSide.LEFT) } }
+                val saved = attempt.value
+                reportSaveResult(saved != null, saved?.exifError, readFailed = attempt.readFailed)
                 if (saved == null) return
                 withContext(Dispatchers.IO) { file.delete() }
                 imageFiles = imageFiles.toMutableList().apply { this[currentImageIndex] = saved.file }
