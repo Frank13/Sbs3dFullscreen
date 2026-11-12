@@ -269,4 +269,8 @@
     <string name="whats_new_v131_item_1">Correction : plantage à l'ouverture du sélecteur de fichiers sur certains dossiers</string>
     <string name="whats_new_v131_item_2">Correction : plantage à l'import d'un diaporama si OneDrive est déconnecté</string>
     <string name="whats_new_v131_item_3">Correction : les photos illisibles sont ignorées à l'ajout dans un diaporama</string>
+    <!-- v1.3.2 -->
+    <string name="whats_new_v132_item_1">Ajout de photos au diaporama depuis plusieurs dossiers</string>
+    <string name="whats_new_v132_item_2">Correction : messages clairs pour les fichiers OneDrive illisibles</string>
+    <string name="whats_new_v132_item_3">Correction : les vidéos illisibles passent à la diapositive suivante</string>
 </resources>

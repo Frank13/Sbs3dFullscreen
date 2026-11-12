@@ -269,4 +269,8 @@
     <string name="whats_new_v131_item_1">Fix: crash when opening the file chooser on some folders</string>
     <string name="whats_new_v131_item_2">Fix: playlist import crash when OneDrive is offline</string>
     <string name="whats_new_v131_item_3">Fix: unreadable photos are skipped when added to a playlist</string>
+    <!-- v1.3.2 -->
+    <string name="whats_new_v132_item_1">Add playlist photos from several folders at once</string>
+    <string name="whats_new_v132_item_2">Fix: clear messages for unreadable OneDrive files</string>
+    <string name="whats_new_v132_item_3">Fix: unplayable videos skip to the next slide</string>
 </resources>
