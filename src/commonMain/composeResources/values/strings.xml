@@ -85,7 +85,7 @@
     <string name="playlist_delete_option">Delete playlist</string>
     <string name="playlist_delete_confirm_title">Delete playlist?</string>
     <string name="playlist_delete_confirm_ok">Delete</string>
-    <string name="playlist_delete_confirm_message">This will permanently delete the playlist "%1$s" and its %2$d photo(s).</string>
+    <string name="playlist_delete_confirm_message">This will move the playlist "%1$s" and its %2$d photo(s) to the Recycle Bin.</string>
     <string name="playlist_item_edit_title">Edit playlist picture</string>
     <string name="playlist_item_edit_title_video">Edit playlist video</string>
     <string name="playlist_item_comment">Comment</string>
@@ -140,7 +140,7 @@
     <string name="spot_stereo_issues_button">Spot stereo issues</string>
     <string name="delete_button">Delete</string>
     <string name="delete_confirm_dialog_title">Delete photo?</string>
-    <string name="delete_confirm_dialog_message">This will permanently delete this photo from disk.</string>
+    <string name="delete_confirm_dialog_message">This will move this photo to the Recycle Bin.</string>
     <string name="delete_raw_dialog_title">Delete stereo photo?</string>
     <string name="delete_raw_dialog_message">This is an unedited stereo photo. You can keep one eye as a standalone 2D photo instead of deleting it entirely.</string>
     <string name="delete_keep_left_button">Keep left eye (2D)</string>

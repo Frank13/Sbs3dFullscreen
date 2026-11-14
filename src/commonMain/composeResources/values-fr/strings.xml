@@ -85,7 +85,7 @@
     <string name="playlist_delete_option">Supprimer le diaporama</string>
     <string name="playlist_delete_confirm_title">Supprimer le diaporama ?</string>
     <string name="playlist_delete_confirm_ok">Supprimer</string>
-    <string name="playlist_delete_confirm_message">Ceci supprimera définitivement le diaporama « %1$s » et ses %2$d photo(s).</string>
+    <string name="playlist_delete_confirm_message">Le diaporama « %1$s » et ses %2$d photo(s) seront déplacés dans la corbeille.</string>
     <string name="playlist_item_edit_title">Éditer cette image du diaporama</string>
     <string name="playlist_item_edit_title_video">Éditer cette vidéo du diaporama</string>
     <string name="playlist_item_comment">Commentaire</string>
@@ -140,7 +140,7 @@
     <string name="spot_stereo_issues_button">Repérer les problèmes stéréo</string>
     <string name="delete_button">Supprimer</string>
     <string name="delete_confirm_dialog_title">Supprimer la photo ?</string>
-    <string name="delete_confirm_dialog_message">Ceci supprimera définitivement cette photo du disque.</string>
+    <string name="delete_confirm_dialog_message">Cette photo sera déplacée dans la corbeille.</string>
     <string name="delete_raw_dialog_title">Supprimer la photo stéréo ?</string>
     <string name="delete_raw_dialog_message">Cette photo stéréo n'a pas été modifiée. Vous pouvez conserver un œil sous forme de photo 2D au lieu de la supprimer entièrement.</string>
     <string name="delete_keep_left_button">Garder l'œil gauche (2D)</string>

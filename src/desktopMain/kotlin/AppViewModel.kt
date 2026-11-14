@@ -803,7 +803,8 @@ class AppViewModel(initialFile: File?) {
     enum class KeepHalfSide { LEFT, RIGHT }
 
     /**
-     * Deletes the currently shown photo from disk. With [keepHalf] set (InfoPanel's delete tool
+     * Deletes the currently shown photo by moving it to the Windows Recycle Bin (see
+     * [moveToRecycleBin]), so a mistaken delete can be restored. With [keepHalf] set (InfoPanel's delete tool
      * offers this only for an unedited "_raw" photo - see GalleryScreen.kt's rawEditedLabel), that
      * eye-half is first saved as a standalone 2D JPEG via [KeepHalf.saveHalf] (same file-naming/
      * EXIF-copy step every save path uses) and swapped into the current slot, triggering [saveToast]
@@ -825,12 +826,12 @@ class AppViewModel(initialFile: File?) {
                 val saved = attempt.value
                 reportSaveResult(saved != null, saved?.exifError, readFailed = attempt.readFailed)
                 if (saved == null) return
-                withContext(Dispatchers.IO) { file.delete() }
+                withContext(Dispatchers.IO) { moveToRecycleBin(file) }
                 imageFiles = imageFiles.toMutableList().apply { this[currentImageIndex] = saved.file }
                 photoTools.resetAll()
                 Analytics.logEvent("photo_delete", mapOf("keep_half" to keepHalf.name.lowercase()))
             } else {
-                val deleted = withContext(Dispatchers.IO) { file.delete() }
+                val deleted = withContext(Dispatchers.IO) { moveToRecycleBin(file) }
                 if (!deleted) return
                 val newFiles = imageFiles.toMutableList().apply { removeAt(currentImageIndex) }
                 imageFiles = newFiles

@@ -37,8 +37,16 @@ import javax.swing.SwingUtilities
  * Jobs never suspend: they post their UI-state updates with [onUi] (the AWT event thread Compose runs
  * on), which keeps that order too. A failed job is reported through [writeError] (a snackbar on
  * whichever playlist screen is showing) instead of escaping into the window's crash handler.
+ *
+ * **Deleting.** User-requested deletions (a playlist, one of its items, a soundtrack track) go through
+ * [discard], which moves them to the Recycle Bin ([moveToRecycleBin]) so they can be restored. Tests
+ * (any [rootOverride]) get a plain permanent delete instead, so they never fill the real Recycle Bin.
  */
-class PlaylistEditorState(rootOverride: File? = null) {
+class PlaylistEditorState(
+    rootOverride: File? = null,
+    private val discard: (File) -> Boolean =
+        if (rootOverride != null) { file -> file.deleteRecursively() } else ::moveToRecycleBin,
+) {
     // Resolved lazily (not on every access) so the one-time rename of the pre-rebrand
     // Pictures/sbs3dFullscreen folder happens at most once per run - existing users keep their
     // playlists. Skipped if the new folder already exists, so nothing is ever overwritten.
@@ -489,7 +497,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
         val playlist = editing ?: return
         val filename = playlist.soundtrack.getOrNull(index) ?: return
         save(playlist.copy(soundtrack = playlist.soundtrack.filterIndexed { i, _ -> i != index })) {
-            File(playlist.absolutePath, filename).delete()
+            discard(File(playlist.absolutePath, filename))
         }
     }
 
@@ -664,14 +672,14 @@ class PlaylistEditorState(rootOverride: File? = null) {
         val newPhotos = playlist.photos.toMutableList().apply { removeAt(index) }.toList()
         // The file is only deleted once the index no longer lists it.
         save(playlist.copy(photos = newPhotos)) {
-            playlistItemFile(photo.imageUriString).delete()
+            discard(playlistItemFile(photo.imageUriString))
         }
         return true
     }
 
     /**
-     * Deletes the playlist being edited (folder and all) from disk - in the background, as a playlist
-     * with videos can take a while to delete. The list screen the caller then returns to is rescanned
+     * Moves the playlist being edited (folder and all) to the Recycle Bin - in the background, as a
+     * playlist with videos can take a while to move. The list screen the caller then returns to is rescanned
      * after the deletion, so it shows what is really left; a failure (e.g. a file open elsewhere) is
      * reported through [writeError].
      */
@@ -680,8 +688,8 @@ class PlaylistEditorState(rootOverride: File? = null) {
         editing = null
         indexRecovery = null
         enqueue("delete") {
-            if (!File(playlist.absolutePath).deleteRecursively()) {
-                throw IOException("Some files of ${File(playlist.absolutePath).name} could not be deleted")
+            if (!discard(File(playlist.absolutePath))) {
+                throw IOException("${File(playlist.absolutePath).name} could not be moved to the Recycle Bin")
             }
         }
         return true
