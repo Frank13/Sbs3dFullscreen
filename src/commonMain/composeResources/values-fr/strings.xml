@@ -240,6 +240,13 @@
     <string name="crash_recovered_message">SBS 3D Viewer a rencontré une erreur inattendue et est revenu à l'écran d'accueil.</string>
     <string name="crash_recovered_ok">OK</string>
     <string name="crash_loop_message">SBS 3D Viewer rencontre une erreur inattendue à répétition et doit se fermer. Veuillez le relancer.</string>
+    <string name="crash_report_screen_title">SBS 3D Viewer n'a pas pu démarrer</string>
+    <string name="crash_report_explanation">Une erreur inattendue a empêché SBS 3D Viewer de démarrer. Vous pouvez envoyer les détails techniques ci-dessous au développeur. Décrire ce que vous faisiez juste avant (quel fichier vous avez ouvert, comment vous avez lancé l'application, ...) aide beaucoup à la corriger.</string>
+    <string name="crash_report_message_label">Que faisiez-vous quand c'est arrivé ? (facultatif)</string>
+    <string name="crash_report_details_label">Détails de l'erreur</string>
+    <string name="crash_recovered_report">Signaler le problème</string>
+    <string name="crash_report_runtime_title">Signaler un problème</string>
+    <string name="crash_report_runtime_explanation">SBS 3D Viewer a rencontré une erreur inattendue. Vous pouvez envoyer les détails techniques ci-dessous au développeur. Décrire ce que vous faisiez juste avant (quel écran, quel fichier, sur quel bouton vous avez cliqué, ...) aide beaucoup à la corriger.</string>
     <string name="about_analytics_status_label">Données d'utilisation : %1$s</string>
     <string name="about_analytics_status_allowed">autorisées</string>
     <string name="about_analytics_status_revoked">non autorisées</string>

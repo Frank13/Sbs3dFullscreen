@@ -433,11 +433,17 @@ class AppViewModel(initialFile: File?) {
         screen = Screen.Welcome
     }
 
-    fun openFeedback() {
+    /** Scrubbed stack trace the Feedback screen is opened with, from CrashRecoveredDialog's "Report" button. */
+    var feedbackCrashReport by mutableStateOf<String?>(null)
+        private set
+
+    fun openFeedback(crashReport: String? = null) {
+        feedbackCrashReport = crashReport
         screen = Screen.Feedback
     }
 
     fun closeFeedback() {
+        feedbackCrashReport = null
         screen = Screen.Welcome
     }
 

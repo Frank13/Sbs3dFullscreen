@@ -20,6 +20,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -61,17 +63,51 @@ fun main(args: Array<String>) {
 
 // The packaged app's jpackage launcher turns any exception escaping main() into a bare "Failed to
 // launch JVM" box with no stack trace, so surface the real error: shown in a dialog and saved to
-// ~/sbs3dViewer-crash.log (see CrashReporting), and sent to Sentry with consent.
+// ~/sbs3dViewer-crash.log (see CrashReporting), and sent to Sentry with consent. Shown as the
+// FeedbackScreen in crash-report mode, so the user can mail it to the developer with some context;
+// falls back to a plain Swing dialog if Compose itself can't start (e.g. a missing jlink module).
 private fun reportStartupCrash(t: Throwable) {
     val trace = t.stackTraceToString()
     CrashReporting.report(t, source = "startup")
     CrashReporting.flush()
+    if (runCatching { showStartupCrashReport(CrashReporting.scrub(trace)) }.getOrDefault(false)) return
     runCatching {
         val text = javax.swing.JTextArea(trace, 25, 100).apply { isEditable = false }
         javax.swing.JOptionPane.showMessageDialog(
             null, javax.swing.JScrollPane(text), "SBS 3D Viewer - startup error", javax.swing.JOptionPane.ERROR_MESSAGE
         )
     }
+}
+
+/** Blocks until the crash report window is closed. False if it failed to compose/render. */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun showStartupCrashReport(trace: String): Boolean {
+    var failed = false
+    // exitProcessOnExit = false: main() still rethrows afterwards, same as with the old dialog.
+    application(exitProcessOnExit = false) {
+        val exceptionHandlerFactory = remember {
+            WindowExceptionHandlerFactory { _ ->
+                WindowExceptionHandler { error ->
+                    if (!failed) CrashReporting.report(error, source = "startup-report")
+                    failed = true
+                    SwingUtilities.invokeLater { exitApplication() }
+                }
+            }
+        }
+        CompositionLocalProvider(LocalWindowExceptionHandlerFactory provides exceptionHandlerFactory) {
+            Window(
+                onCloseRequest = ::exitApplication,
+                state = rememberWindowState(size = DpSize(900.dp, 750.dp)),
+                title = "SBS 3D Viewer",
+                icon = painterResource(Res.drawable.icon),
+            ) {
+                AppTheme {
+                    FeedbackScreen(onBack = ::exitApplication, crashReport = trace, crashAtStartup = true)
+                }
+            }
+        }
+    }
+    return !failed
 }
 
 private fun runApp(args: Array<String>) = application {
@@ -234,6 +270,8 @@ private fun runApp(args: Array<String>) = application {
     // fresh one (via the same key() that handles undecorated changes).
     var windowGeneration by remember { mutableStateOf(0) }
     var showCrashRecoveredDialog by remember { mutableStateOf(false) }
+    // Scrubbed trace of the crash CrashRecoveredDialog is about, for its "Report" button.
+    var lastCrashTrace by remember { mutableStateOf<String?>(null) }
     val recentWindowCrashesMs = remember { ArrayDeque<Long>() }
 
     // Replaces Compose's default handler (error dialog, then close the window - which, as the only
@@ -271,6 +309,7 @@ private fun runApp(args: Array<String>) = application {
                     imageDialogShown = false
                     isEnteringFullscreen = false
                     viewModel.resetAfterCrash()
+                    lastCrashTrace = runCatching { CrashReporting.scrub(throwable.stackTraceToString()) }.getOrNull()
                     showCrashRecoveredDialog = true
                     windowGeneration++
                 }
@@ -523,7 +562,11 @@ private fun runApp(args: Array<String>) = application {
 
                                     Screen.About -> AboutScreen(onBack = { viewModel.closeAbout() })
 
-                                    Screen.Feedback -> FeedbackScreen(onBack = { viewModel.closeFeedback() })
+                                    Screen.Feedback -> FeedbackScreen(
+                                        onBack = { viewModel.closeFeedback() },
+                                        crashReport = viewModel.feedbackCrashReport,
+                                        crashAtStartup = false,
+                                    )
 
                                     Screen.Gallery -> {
                                         val changeFolderDialogTitle = stringResource(Res.string.playlist_add_photos_directory_dialog_title)
@@ -844,7 +887,14 @@ private fun runApp(args: Array<String>) = application {
                                 }
 
                                 if (showCrashRecoveredDialog) {
-                                    CrashRecoveredDialog(onDismiss = { showCrashRecoveredDialog = false })
+                                    CrashRecoveredDialog(
+                                        onDismiss = { showCrashRecoveredDialog = false },
+                                        onReport = {
+                                            showCrashRecoveredDialog = false
+                                            Analytics.logEvent("crash_report_opened")
+                                            viewModel.openFeedback(lastCrashTrace)
+                                        },
+                                    )
                                 }
                             }
                         }

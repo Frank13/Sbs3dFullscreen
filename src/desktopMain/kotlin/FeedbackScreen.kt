@@ -1,4 +1,11 @@
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.font.FontFamily
+import sbs3dViewer.resources.crash_report_details_label
+import sbs3dViewer.resources.crash_report_explanation
+import sbs3dViewer.resources.crash_report_message_label
+import sbs3dViewer.resources.crash_report_runtime_explanation
+import sbs3dViewer.resources.crash_report_runtime_title
+import sbs3dViewer.resources.crash_report_screen_title
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -69,8 +76,9 @@ import java.time.Duration
 object FeedbackSender {
     private const val ContactUrl = "https://3dcamera.fr/en/contact"
 
-    /** Fixed subject, so feedback is easy to filter in the 3dcamera.fr inbox. Not localized on purpose. */
-    private const val Subject = "SBS 3D Viewer Feedback"
+    /** Fixed subjects, so feedback/bug reports are easy to filter in the 3dcamera.fr inbox. Not localized on purpose. */
+    const val FeedbackSubject = "SBS 3D Viewer Feedback"
+    const val BugReportSubject = "SBS 3D Viewer : Bug report"
 
     // The form requires a name and a syntactically valid email; used when the user leaves the
     // optional email blank (so replying is just not possible for that message).
@@ -82,7 +90,7 @@ object FeedbackSender {
     private val messageTypeRegex = Regex(""""(\w+)":\[""")
 
     /** True if the site confirmed the email was sent. Never throws (network/OneDrive-style rule: failures become false). */
-    fun send(message: String, replyEmail: String): Boolean = try {
+    fun send(message: String, replyEmail: String, subject: String = FeedbackSubject): Boolean = try {
         val client = HttpClient.newBuilder()
             .cookieHandler(CookieManager())
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -102,7 +110,7 @@ object FeedbackSender {
         val fields = listOf(
             "jform[contact_name]" to SenderName,
             "jform[contact_email]" to replyEmail.trim().ifEmpty { AnonymousEmail },
-            "jform[contact_subject]" to Subject,
+            "jform[contact_subject]" to subject,
             "jform[contact_message]" to fullMessage,
         ) + hiddenFields
         val body = fields.joinToString("&") { (k, v) ->
@@ -131,12 +139,21 @@ private fun isPlausibleEmail(email: String) = email.isBlank() || Regex("""[^@\s]
 
 private const val FeedbackMaxLength = 5000
 
+/** Keeps the whole mail reasonable: the top frames (and the first "Caused by") are what matter. */
+private const val CrashReportMaxLength = 6000
+
 /**
  * Opened from the welcome screen's settings dialog ("Send feedback", its first item): a multi-line
  * message field and a Send button that posts it through [FeedbackSender], without leaving the app.
+ *
+ * With a non-null [crashReport] (a scrubbed stack trace - see Main.kt's reportStartupCrash), it
+ * becomes the crash report form instead: the message field turns into an optional "what were you
+ * doing?" description, the read-only trace is shown below it and appended to the sent message.
+ * [crashAtStartup] picks the wording: "could not start" (Main.kt's reportStartupCrash) or an
+ * error while in use (CrashRecoveredDialog's "Report" button).
  */
 @Composable
-fun FeedbackScreen(onBack: () -> Unit) {
+fun FeedbackScreen(onBack: () -> Unit, crashReport: String? = null, crashAtStartup: Boolean = false) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf("") }
@@ -144,14 +161,36 @@ fun FeedbackScreen(onBack: () -> Unit) {
     var sending by remember { mutableStateOf(false) }
     var showSentDialog by remember { mutableStateOf(false) }
     var showNoEmailDialog by remember { mutableStateOf(false) }
+    val trace = remember(crashReport) { crashReport?.take(CrashReportMaxLength) }
 
     fun send() {
         sending = true
+        val fullMessage = if (trace == null) message else
+            message.trim().ifEmpty { "(no description)" } + "\n\n--- Stack trace ---\n" +
+                // Joomla's HTML filter on the message would strip "<init>", "<lambda>" and the scrub
+                // placeholders ("<path>", ...) as if they were tags, so send them as "[init]" etc.
+                trace.replace('<', '[').replace('>', ']')
         scope.launch {
-            val sent = withContext(Dispatchers.IO) { FeedbackSender.send(message, email) }
+            val sent = withContext(Dispatchers.IO) { FeedbackSender.send(
+                    fullMessage,
+                    email,
+                    subject = if (trace == null) FeedbackSender.FeedbackSubject else FeedbackSender.BugReportSubject,
+                )
+            }
             sending = false
             // Tracks usage and catches the site's form silently changing (success=false spikes).
-            Analytics.logEvent("feedback_sent", mapOf("success" to sent, "with_email" to email.isNotBlank()))
+            Analytics.logEvent(
+                "feedback_sent",
+                mapOf(
+                    "success" to sent,
+                    "with_email" to email.isNotBlank(),
+                    "crash_report" to when {
+                        trace == null -> "none"
+                        crashAtStartup -> "startup"
+                        else -> "runtime"
+                    },
+                ),
+            )
             if (sent) {
                 showSentDialog = true
             } else {
@@ -161,7 +200,13 @@ fun FeedbackScreen(onBack: () -> Unit) {
     }
 
     ScreenWith3dotMenuAndSnackbar(
-        screenTitle = stringResource(Res.string.feedback_screen_title),
+        screenTitle = stringResource(
+            when {
+                trace == null -> Res.string.feedback_screen_title
+                crashAtStartup -> Res.string.crash_report_screen_title
+                else -> Res.string.crash_report_runtime_title
+            }
+        ),
         navigationIcon = {
             IconButton(onClick = onBack, enabled = !sending) {
                 Icon(
@@ -175,18 +220,46 @@ fun FeedbackScreen(onBack: () -> Unit) {
         bottomBar = {},
         snackbarHostState = snackbarHostState,
         screenContent = {
+            // No verticalScroll here: ScreenWith3dotMenuAndSnackbar already scrolls its content.
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(stringResource(Res.string.feedback_explanation))
+                Text(
+                    stringResource(
+                        when {
+                            trace == null -> Res.string.feedback_explanation
+                            crashAtStartup -> Res.string.crash_report_explanation
+                            else -> Res.string.crash_report_runtime_explanation
+                        }
+                    )
+                )
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = message,
                     onValueChange = { message = it.take(FeedbackMaxLength) },
-                    label = { Text(stringResource(Res.string.feedback_message_label)) },
+                    label = {
+                        Text(
+                            stringResource(
+                                if (trace == null) Res.string.feedback_message_label else Res.string.crash_report_message_label
+                            )
+                        )
+                    },
                     enabled = !sending,
-                    minLines = 8,
-                    maxLines = 16,
+                    minLines = if (trace == null) 8 else 4,
+                    maxLines = if (trace == null) 16 else 8,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (trace != null) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = trace,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(Res.string.crash_report_details_label)) },
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        minLines = 6,
+                        maxLines = 12,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = email,
@@ -200,7 +273,8 @@ fun FeedbackScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { if (email.isBlank()) showNoEmailDialog = true else send() },
-                    enabled = !sending && message.isNotBlank() && isPlausibleEmail(email),
+                    // The trace alone is already worth sending, so the description is optional then.
+                    enabled = !sending && (trace != null || message.isNotBlank()) && isPlausibleEmail(email),
                     modifier = Modifier.align(Alignment.End),
                 ) {
                     if (sending) {

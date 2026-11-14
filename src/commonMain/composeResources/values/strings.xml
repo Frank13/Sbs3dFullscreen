@@ -240,6 +240,13 @@
     <string name="crash_recovered_message">SBS 3D Viewer hit an unexpected error and went back to the home screen.</string>
     <string name="crash_recovered_ok">OK</string>
     <string name="crash_loop_message">SBS 3D Viewer keeps hitting an unexpected error and needs to close. Please restart it.</string>
+    <string name="crash_report_screen_title">SBS 3D Viewer could not start</string>
+    <string name="crash_report_explanation">An unexpected error prevented SBS 3D Viewer from starting. You can send the technical details below to the developer. Describing what you were doing just before (which file you opened, how you launched the app, ...) really helps to fix it.</string>
+    <string name="crash_report_message_label">What were you doing when it happened? (optional)</string>
+    <string name="crash_report_details_label">Error details</string>
+    <string name="crash_recovered_report">Report the problem</string>
+    <string name="crash_report_runtime_title">Report a problem</string>
+    <string name="crash_report_runtime_explanation">SBS 3D Viewer hit an unexpected error. You can send the technical details below to the developer. Describing what you were doing just before (which screen, which file, which button you clicked, ...) really helps to fix it.</string>
     <string name="about_analytics_status_label">Usage analytics: %1$s</string>
     <string name="about_analytics_status_allowed">allowed</string>
     <string name="about_analytics_status_revoked">not allowed</string>

@@ -127,7 +127,12 @@ object CrashReporting {
         return event
     }
 
-    private fun scrub(text: String): String {
+    /**
+     * Strips the user's home dir, absolute paths, media file names and the Windows account name.
+     * Also used by the startup crash report (FeedbackScreen), so a trace mailed through the contact
+     * form leaks no more than what Sentry gets.
+     */
+    fun scrub(text: String): String {
         val withoutHome = if (userHome.isNotBlank()) text.replace(userHome, "<home>", ignoreCase = true) else text
         val withoutPaths = fileNameRegex.replace(pathRegex.replace(withoutHome, "<path>"), "<file>")
         // Last, and only as a whole word: a short Windows account name ("al") would otherwise

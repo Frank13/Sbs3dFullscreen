@@ -16,14 +16,16 @@ import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
 import sbs3dViewer.resources.crash_recovered_message
 import sbs3dViewer.resources.crash_recovered_ok
+import sbs3dViewer.resources.crash_recovered_report
 import sbs3dViewer.resources.crash_recovered_title
 
 /**
  * Shown (from Main.kt) on the Welcome screen right after its window exception handler recovered
  * from a UI crash, so the sudden jump back to the home screen doesn't look like a random glitch.
+ * [onReport] opens the Feedback screen prefilled with the crash's stack trace.
  */
 @Composable
-fun CrashRecoveredDialog(onDismiss: () -> Unit) {
+fun CrashRecoveredDialog(onDismiss: () -> Unit, onReport: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
@@ -39,6 +41,11 @@ fun CrashRecoveredDialog(onDismiss: () -> Unit) {
         title = { Text(stringResource(Res.string.crash_recovered_title)) },
         text = { Text(stringResource(Res.string.crash_recovered_message)) },
         confirmButton = {
+            TextButton(onClick = onReport) {
+                Text(stringResource(Res.string.crash_recovered_report))
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.crash_recovered_ok))
             }
