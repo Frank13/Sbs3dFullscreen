@@ -85,8 +85,14 @@ object Analytics {
 
     fun logEvent(name: String, params: Map<String, Any?> = emptyMap()) {
         if (!consentGranted || !isConfigured) return
-        val eventParams = params + mapOf("session_id" to sessionId, "engagement_time_msec" to "100") +
-            (if (isDevBuild) mapOf("debug_mode" to 1) else emptyMap())
+        // build_type is an explicit, filterable copy of the same dev/packaged split: debug_mode
+        // isn't exposed as a dimension in Looker Studio, whereas build_type can be registered in
+        // GA4 as an event-scoped custom dimension and filtered on there.
+        val eventParams = params + mapOf(
+            "session_id" to sessionId,
+            "engagement_time_msec" to "100",
+            "build_type" to if (isDevBuild) "dev" else "store",
+        ) + (if (isDevBuild) mapOf("debug_mode" to 1) else emptyMap())
         val body = mapOf(
             "client_id" to clientId,
             "events" to listOf(mapOf("name" to name, "params" to eventParams)),
