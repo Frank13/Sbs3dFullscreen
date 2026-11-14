@@ -1,5 +1,11 @@
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import java.awt.Desktop
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -119,12 +125,18 @@ fun PlaylistScreen(
     onReorderPhotos: (List<PlaylistItem>) -> Unit,
     onDelete: () -> Boolean,
     onOpenPlaylistItem: (Int) -> Unit,
+    // Non-null when the playlist's index couldn't be read - see PlaylistEditorState.indexRecovery.
+    indexRecovery: PlaylistEditorState.IndexRecovery? = null,
+    onRestoreIndex: () -> Boolean = { false },
+    onDismissIndexRecovery: () -> Unit = {},
     // Hoisted by Main.kt so the scroll position survives opening a playlist item and coming back.
     lazyListState: LazyListState = rememberLazyListState(),
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val vlcMissingToast = stringResource(Res.string.vlc_missing_cannot_play_toast)
+    val indexRestoredToast = stringResource(Res.string.playlist_index_restored)
+    val indexRestoreFailedToast = stringResource(Res.string.playlist_index_restore_failed)
 
     val strings = PlaylistScreenStrings(
         ok = stringResource(Res.string.ok_button),
@@ -237,7 +249,20 @@ fun PlaylistScreen(
             }
             ComposablePlaylistMenu(onDeleteTracked, { onBack(); true }, playlist.name, playlist.photos.size, strings = strings)
         },
-        bottomBar = {},
+        // A bottom bar rather than a LazyColumn header item, which would shift PLAYLIST_HEADER_ITEM_COUNT's
+        // drag-to-reorder index math; the Scaffold keeps the FABs above it.
+        bottomBar = {
+            indexRecovery?.let { recovery ->
+                IndexRecoveryBanner(
+                    recovery = recovery,
+                    onRestore = {
+                        val restored = onRestoreIndex()
+                        scope.launch { snackbarHostState.showSnackbar(if (restored) indexRestoredToast else indexRestoreFailedToast) }
+                    },
+                    onDismiss = onDismissIndexRecovery,
+                )
+            }
+        },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FloatingActionButton(
@@ -492,6 +517,54 @@ fun PlaylistScreen(
             }
         },
     )
+}
+
+/**
+ * Tells the user their playlist only shows a photos-only fallback because its index couldn't be read,
+ * and where the original went - with Restore (a kept copy that loads again), Retry (the index still in
+ * place, e.g. OneDrive offline), Open folder (to repair a damaged copy by hand) and Dismiss.
+ */
+@Composable
+private fun IndexRecoveryBanner(recovery: PlaylistEditorState.IndexRecovery, onRestore: () -> Unit, onDismiss: () -> Unit) {
+    val message = when {
+        !recovery.keptAside -> stringResource(Res.string.playlist_index_unreadable_in_place)
+        recovery.restorable -> stringResource(Res.string.playlist_index_unreadable_restorable, recovery.file.name)
+        else -> stringResource(Res.string.playlist_index_unreadable_damaged, recovery.file.name)
+    }
+    Surface(color = MaterialTheme.colorScheme.errorContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(40.dp).background(MaterialTheme.colorScheme.error, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onError)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    stringResource(Res.string.playlist_index_unreadable_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+            if (recovery.restorable) {
+                TextButton(onClick = onRestore) {
+                    Text(stringResource(if (recovery.keptAside) Res.string.playlist_index_restore else Res.string.playlist_index_retry))
+                }
+            } else if (!recovery.keptAside) {
+                TextButton(onClick = onRestore) { Text(stringResource(Res.string.playlist_index_retry)) }
+            }
+            if (recovery.keptAside) {
+                TextButton(onClick = {
+                    Analytics.logEvent("menu_item_click", mapOf("item" to "open_playlist_folder"))
+                    runCatching { Desktop.getDesktop().open(recovery.file.parentFile) }
+                }) {
+                    Text(stringResource(Res.string.playlist_index_open_folder))
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(Res.string.playlist_index_dismiss)) }
+            }
+        }
+    }
 }
 
 /**

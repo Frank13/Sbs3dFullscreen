@@ -292,4 +292,15 @@
     <string name="whats_new_v132_item_1">Add playlist photos from several folders at once</string>
     <string name="whats_new_v132_item_2">Fix: clear messages for unreadable OneDrive files</string>
     <string name="whats_new_v132_item_3">Fix: unplayable videos skip to the next slide</string>
+    <!-- Playlist index recovery banner (PlaylistScreen) -->
+    <string name="playlist_index_unreadable_title">This playlist's index couldn't be read</string>
+    <string name="playlist_index_unreadable_restorable">Only its photos are shown. The original index (comments, videos, soundtrack, styles...) was kept as "%1$s" and can be restored.</string>
+    <string name="playlist_index_unreadable_damaged">Only its photos are shown. The original index is damaged and can't be restored automatically: it was kept as "%1$s" in the playlist folder.</string>
+    <string name="playlist_index_unreadable_in_place">Only its photos are shown. The index file can't be read right now (OneDrive not running?). If you edit this playlist, the original index will be kept as a copy.</string>
+    <string name="playlist_index_restore">Restore</string>
+    <string name="playlist_index_retry">Retry</string>
+    <string name="playlist_index_open_folder">Open folder</string>
+    <string name="playlist_index_dismiss">Dismiss</string>
+    <string name="playlist_index_restored">Playlist restored</string>
+    <string name="playlist_index_restore_failed">The index couldn't be restored</string>
 </resources>

@@ -1,4 +1,5 @@
 import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_FILENAME
+import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_UNREADABLE_PREFIX
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.getYamlPlaylistFromYaml
@@ -127,6 +128,57 @@ class PlaylistIndexSafetyTest {
         // Later saves of the now-valid index must not pile up more "unreadable" copies.
         assertTrue(editor.modifySubtitle("again"))
         assertEquals(1, unreadableCopies(folder).size)
+    }
+
+    /** Opens a playlist whose index fails to load only because of [index]'s content, as if just found in the list. */
+    private fun openWithUnparseableIndex(name: String, index: String): PlaylistEditorState {
+        val folder = File(root, name).apply { mkdirs() }
+        realJpeg(folder, "a.jpg")
+        File(folder, PLAYLIST_INDEX_FILENAME).writeText(index)
+        return PlaylistEditorState(rootOverride = root).apply {
+            openList()
+            openForEdit(all.single())
+        }
+    }
+
+    @Test
+    fun `a kept copy that loads again can be restored, and nothing is offered afterwards`() {
+        val editor = openWithUnparseableIndex("Restore", "formatVersion : 1.0\nname : [\n")
+        val folder = File(root, "Restore")
+        editor.modifySubtitle("edited while broken") // the photos-only index the restore replaces
+        // The kept copy reads fine again (e.g. it was only unreadable because OneDrive was offline).
+        assertNotNull(editor.indexRecovery).file.writeText(richIndex)
+        editor.openForEdit(assertNotNull(editor.editing))
+        assertTrue(assertNotNull(editor.indexRecovery).restorable)
+
+        assertTrue(editor.restoreIndex())
+
+        val restored = assertNotNull(editor.editing)
+        assertEquals("keep me", restored.subtitle)
+        assertEquals("precious comment", restored.photos.single().comment)
+        assertEquals(null, editor.indexRecovery)
+        assertTrue(unreadableCopies(folder).isEmpty())
+        // The replaced photos-only index is still around as the backup.
+        assertEquals("edited while broken", getYamlPlaylistFromYaml(File(folder, PLAYLIST_INDEX_BACKUP_FILENAME).readText()).subtitle)
+    }
+
+    @Test
+    fun `a damaged copy is offered but can't be restored, and dismissing it keeps the file`() {
+        val damaged = "formatVersion : 1.0\nname : [\n"
+        val editor = openWithUnparseableIndex("Damaged", damaged)
+        val folder = File(root, "Damaged")
+
+        val recovery = assertNotNull(editor.indexRecovery)
+        assertTrue(recovery.keptAside)
+        assertFalse(recovery.restorable)
+        assertFalse(editor.restoreIndex())
+        assertEquals(damaged, recovery.file.readText())
+
+        editor.dismissIndexRecovery()
+
+        assertEquals(null, editor.indexRecovery)
+        val kept = folder.listFiles { f -> f.name.startsWith(PLAYLIST_INDEX_KEPT_PREFIX) }.orEmpty().single()
+        assertEquals(damaged, kept.readText())
     }
 
     @Test

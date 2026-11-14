@@ -53,7 +53,9 @@ data class SavedFile(val file: File, val exifError: String? = null)
  * against the SOURCE_HASH values below; it warns if they no longer match, meaning the Android
  * side changed and this file needs to be hand-updated (and the hash refreshed) to match.
  * SOURCE_HASH autoalign2d.kt: 43244260E5A367907825FB8FE188A5905640D8E1202BE50655566AC10A113E08
- * SOURCE_HASH autoalignByHomography.kt: 16665BA98541D426F3C4278005D077F05F859F0523E89AF57DED8EBFD60F8E42
+ * SOURCE_HASH autoalignByHomography.kt: 3624CF18C8685A934470E4BDCBF62829EC543130DD565051F18747BD1C9FA3A9
+ *   (Android 7507da2 "phantogram v2" only extracted findRightToLeftHomography/homographyParamsOf out of
+ *   autoAlignHomography - same matching, RANSAC and crop math - so the port below didn't need to change.)
  */
 object AutoAlign {
     @Volatile

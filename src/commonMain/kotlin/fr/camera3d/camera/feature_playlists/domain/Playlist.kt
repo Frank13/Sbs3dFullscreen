@@ -13,6 +13,13 @@ import java.io.File
 const val PLAYLIST_INDEX_FILENAME = "playlistIndex.yaml"
 
 /**
+ * Prefix (followed by a timestamp and ".yaml") of an index that couldn't be read, moved aside by the
+ * platform storage instead of being overwritten - see [Playlist.indexUnreadable]. Shared so that both
+ * apps recognize the copies the other one kept (e.g. in a playlist folder copied from Android to desktop).
+ */
+const val PLAYLIST_INDEX_UNREADABLE_PREFIX = "playlistIndex.unreadable-"
+
+/**
  * true for filenames recognized as SBS video. Like photos, video supports both the full-width
  * and half-width/squeezed SBS conventions via isHalfWidth.
  */

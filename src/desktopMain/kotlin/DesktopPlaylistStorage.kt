@@ -1,4 +1,5 @@
 import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_FILENAME
+import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_UNREADABLE_PREFIX
 import fr.camera3d.camera.feature_playlists.domain.PlaylistStorage
 import fr.camera3d.camera.feature_playlists.domain.PlaylistType
 import fr.camera3d.camera.feature_playlists.service.yamlImporter.getYamlPlaylistFromYaml
@@ -13,8 +14,17 @@ import java.time.format.DateTimeFormatter
 /** Copy of the last index that parsed, kept next to it - see [DesktopPlaylistStorage.writeIndexFile]. */
 internal const val PLAYLIST_INDEX_BACKUP_FILENAME = "$PLAYLIST_INDEX_FILENAME.bak"
 
-/** Prefix of an unreadable index moved aside (never overwritten) - see [DesktopPlaylistStorage.preserveIndexAside]. */
-internal const val PLAYLIST_INDEX_UNREADABLE_PREFIX = "playlistIndex.unreadable-"
+/** Prefix an unreadable copy is renamed to once the user restored or dismissed it, so it stops being
+ *  offered (PlaylistScreen's recovery banner) but still isn't deleted - see PlaylistEditorState.indexRecovery. */
+internal const val PLAYLIST_INDEX_KEPT_PREFIX = "playlistIndex.kept-"
+
+/** Whether [yaml] is a playlist index this app can load. */
+internal fun isValidPlaylistIndex(yaml: String): Boolean = runCatching { getYamlPlaylistFromYaml(yaml) }.isSuccess
+
+/** The `playlistIndex.unreadable-*.yaml` copies kept in [folder], newest first (their names sort by timestamp). */
+internal fun unreadableIndexCopies(folder: File): List<File> =
+    folder.listFiles { f -> f.isFile && f.name.startsWith(PLAYLIST_INDEX_UNREADABLE_PREFIX) }.orEmpty()
+        .sortedByDescending { it.name }
 
 /**
  * Desktop PlaylistStorage: no SAF/MediaStore concept exists here, so `rootDir` plays the role
@@ -115,7 +125,7 @@ class DesktopPlaylistStorage(private val rootDir: File) : PlaylistStorage {
         }
     }
 
-    private fun parses(yaml: String): Boolean = runCatching { getYamlPlaylistFromYaml(yaml) }.isSuccess
+    private fun parses(yaml: String): Boolean = isValidPlaylistIndex(yaml)
 
     override fun listJpegs(playlistDirName: String): List<Pair<String, String>> {
         val dir = folderFor(playlistDirName)

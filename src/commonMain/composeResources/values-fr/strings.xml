@@ -292,4 +292,15 @@
     <string name="whats_new_v132_item_1">Ajout de photos au diaporama depuis plusieurs dossiers</string>
     <string name="whats_new_v132_item_2">Correction : messages clairs pour les fichiers OneDrive illisibles</string>
     <string name="whats_new_v132_item_3">Correction : les vidéos illisibles passent à la diapositive suivante</string>
+    <!-- Playlist index recovery banner (PlaylistScreen) -->
+    <string name="playlist_index_unreadable_title">L'index de ce diaporama n'a pas pu être lu</string>
+    <string name="playlist_index_unreadable_restorable">Seules ses photos sont affichées. L'index d'origine (commentaires, vidéos, musique, styles...) a été conservé sous le nom "%1$s" et peut être restauré.</string>
+    <string name="playlist_index_unreadable_damaged">Seules ses photos sont affichées. L'index d'origine est endommagé et ne peut pas être restauré automatiquement : il a été conservé sous le nom "%1$s" dans le dossier du diaporama.</string>
+    <string name="playlist_index_unreadable_in_place">Seules ses photos sont affichées. Le fichier d'index est illisible pour le moment (OneDrive arrêté ?). Si vous modifiez ce diaporama, l'index d'origine sera conservé dans une copie.</string>
+    <string name="playlist_index_restore">Restaurer</string>
+    <string name="playlist_index_retry">Réessayer</string>
+    <string name="playlist_index_open_folder">Ouvrir le dossier</string>
+    <string name="playlist_index_dismiss">Ignorer</string>
+    <string name="playlist_index_restored">Diaporama restauré</string>
+    <string name="playlist_index_restore_failed">L'index n'a pas pu être restauré</string>
 </resources>

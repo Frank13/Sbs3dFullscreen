@@ -3,6 +3,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import fr.camera3d.camera.feature_playlists.domain.CreditsPlacement
 import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
+import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_FILENAME
+import fr.camera3d.camera.feature_playlists.domain.PLAYLIST_INDEX_UNREADABLE_PREFIX
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
@@ -98,10 +100,118 @@ class PlaylistEditorState(rootOverride: File? = null) {
         all = loadAllFromRoot()
     }
 
+    /**
+     * What PlaylistScreen's recovery banner shows for the playlist being edited, null when its index is
+     * fine: either a kept `playlistIndex.unreadable-*.yaml` copy (see DesktopPlaylistStorage.preserveIndexAside),
+     * or - while [editing] is still Playlist.indexUnreadable because that move failed - the unreadable
+     * index itself, in place.
+     */
+    var indexRecovery by mutableStateOf<IndexRecovery?>(null)
+        private set
+
+    /**
+     * @property file the kept copy, or the in-place index when ![keptAside]
+     * @property restorable whether [file] now loads - a copy kept because OneDrive was offline, or
+     *   because it held a field an older version rejected, restores fine; a truly damaged one doesn't
+     */
+    data class IndexRecovery(val file: File, val keptAside: Boolean, val restorable: Boolean)
+
     /** Opens the given playlist (picked from the list screen) in the editor. */
     fun openForEdit(playlist: Playlist) {
-        editing = playlist
+        beginEditing(playlist)
         enteredFromList = true
+    }
+
+    /**
+     * Every way into the editor goes through here. A Playlist.indexUnreadable playlist gets its
+     * unreadable index moved aside right away - rather than only on its first save (see [persist],
+     * which still does it if this move fails) - so the banner can offer it for restore at once and
+     * the copy doesn't depend on the user editing anything.
+     */
+    private fun beginEditing(playlist: Playlist) {
+        editing = if (playlist.indexUnreadable) {
+            try {
+                storageFor(playlist).preserveIndexAside(playlist.getDirName())
+                Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
+                playlist.copy(indexUnreadable = false)
+            } catch (e: IOException) {
+                playlist
+            }
+        } else {
+            playlist
+        }
+        refreshIndexRecovery()
+    }
+
+    private fun storageFor(playlist: Playlist): DesktopPlaylistStorage {
+        val folder = File(playlist.absolutePath)
+        return DesktopPlaylistStorage(folder.parentFile ?: folder)
+    }
+
+    private fun refreshIndexRecovery() {
+        val playlist = editing
+        indexRecovery = when {
+            playlist == null -> null
+            playlist.indexUnreadable -> {
+                val index = File(playlist.absolutePath, PLAYLIST_INDEX_FILENAME)
+                IndexRecovery(index, keptAside = false, restorable = fileIsValidIndex(index))
+            }
+            else -> unreadableIndexCopies(File(playlist.absolutePath)).firstOrNull()?.let {
+                IndexRecovery(it, keptAside = true, restorable = fileIsValidIndex(it))
+            }
+        }
+    }
+
+    private fun fileIsValidIndex(file: File): Boolean =
+        try {
+            isValidPlaylistIndex(file.readText())
+        } catch (e: IOException) {
+            false
+        }
+
+    /**
+     * The banner's Restore (a kept copy that loads again) / Retry (the in-place index, readable again)
+     * button: puts that index back as the playlist's index and reloads the playlist from it. The index
+     * it replaces (the photos-only one written since) isn't lost either: DesktopPlaylistStorage
+     * keeps it as the .bak. Other kept copies are marked as handled so the banner doesn't come back for
+     * an older one. Returns false (nothing changed) if the index still can't be read.
+     */
+    fun restoreIndex(): Boolean {
+        val recovery = indexRecovery ?: return false
+        val playlist = editing ?: return false
+        val folder = File(playlist.absolutePath)
+        val root = folder.parentFile ?: return false
+        try {
+            if (recovery.keptAside) {
+                val content = recovery.file.readText()
+                if (!isValidPlaylistIndex(content)) return false
+                DesktopPlaylistStorage(root).writeIndexFile(playlist.getDirName(), folder.absolutePath, content)
+                recovery.file.delete()
+                markCopiesKept(folder)
+            }
+            val reloaded = load(root, folder.name)
+            if (reloaded.indexUnreadable) return false
+            editing = reloaded
+        } catch (e: IOException) {
+            return false
+        } finally {
+            refreshIndexRecovery()
+        }
+        Analytics.logEvent("playlist_index_restored")
+        return true
+    }
+
+    /** The banner's Dismiss button: keeps the copies (renamed `playlistIndex.kept-*`) but stops offering them. */
+    fun dismissIndexRecovery() {
+        val playlist = editing ?: return
+        markCopiesKept(File(playlist.absolutePath))
+        refreshIndexRecovery()
+    }
+
+    private fun markCopiesKept(folder: File) {
+        for (copy in unreadableIndexCopies(folder)) {
+            copy.renameTo(File(folder, PLAYLIST_INDEX_KEPT_PREFIX + copy.name.removePrefix(PLAYLIST_INDEX_UNREADABLE_PREFIX)))
+        }
     }
 
     /** Marks a slideshow as launched from the list screen ("Play" button) rather than the editor -
@@ -146,7 +256,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
             }
             load(playlistsRoot, destination.name)
         }
-        editing = playlist
+        beginEditing(playlist)
         Analytics.logEvent("playlist_created", mapOf("source" to "import"))
         return playlist
     }
@@ -180,7 +290,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
             Playlist(name = trimmedName, absolutePath = folder.absolutePath).also { it.save(storage) }
                 .also { Analytics.logEvent("playlist_created", mapOf("source" to "new")) }
         }
-        editing = playlist
+        beginEditing(playlist)
         return true
     }
 
@@ -221,7 +331,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
             PlaylistItem(destName, dest.toPath().toUri().toASCIIString(), isHalfWidth = isVideo, isVideo = isVideo)
         } }
         val updatedPlaylist = playlist.copy(photos = playlist.photos + copiedItems)
-        editing = withContext(Dispatchers.IO) { persist(updatedPlaylist) }
+        commit(withContext(Dispatchers.IO) { persist(updatedPlaylist) }, updatedPlaylist.indexUnreadable)
         if (copiedItems.isNotEmpty()) {
             Analytics.logEvent("playlist_photos_added", mapOf("count" to copiedItems.size))
         }
@@ -313,7 +423,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
         // The index only stores filenames, but each in-memory PlaylistItem.imageUriString is an
         // absolute URI resolved at load time - still pointing into the old folder after the move.
         // Reloading re-resolves them against newFolder, so Play/thumbnails keep working.
-        editing = load(root, newFolder.name)
+        beginEditing(load(root, newFolder.name))
         return true
     }
 
@@ -448,7 +558,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
     }
 
     private fun save(updated: Playlist) {
-        editing = persist(updated)
+        commit(persist(updated), updated.indexUnreadable)
         Analytics.logEvent("playlist_saved")
     }
 
@@ -460,8 +570,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
      * this stripped version. The flag is then cleared: the index just written is this playlist's own.
      */
     private fun persist(playlist: Playlist): Playlist {
-        val folder = File(playlist.absolutePath)
-        val storage = DesktopPlaylistStorage(folder.parentFile ?: folder)
+        val storage = storageFor(playlist)
         if (playlist.indexUnreadable) {
             storage.preserveIndexAside(playlist.getDirName())
             Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
@@ -471,7 +580,15 @@ class PlaylistEditorState(rootOverride: File? = null) {
         return persisted
     }
 
+    /** Makes [persisted] (a [persist] result) the playlist being edited - the banner only needs a
+     *  refresh when that save just moved an unreadable index aside. */
+    private fun commit(persisted: Playlist, wasIndexUnreadable: Boolean) {
+        editing = persisted
+        if (wasIndexUnreadable) refreshIndexRecovery()
+    }
+
     fun closeEdit() {
         editing = null
+        indexRecovery = null
     }
 }

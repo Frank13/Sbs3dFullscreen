@@ -654,6 +654,9 @@ private fun runApp(args: Array<String>) = application {
                                             onReorderPhotos = viewModel::applyPhotosReorder,
                                             onDelete = viewModel::deletePlaylist,
                                             onOpenPlaylistItem = { index -> viewModel.openPlaylistItem(index) },
+                                            indexRecovery = viewModel.playlistEditor.indexRecovery,
+                                            onRestoreIndex = viewModel.playlistEditor::restoreIndex,
+                                            onDismissIndexRecovery = viewModel.playlistEditor::dismissIndexRecovery,
                                         )
                                     }
 

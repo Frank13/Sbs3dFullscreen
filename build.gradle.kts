@@ -47,8 +47,8 @@ kotlin {
                 implementation("org.jetbrains.compose.components:components-resources:1.12.2")
                 // Jackson: same coordinates/version as CameraSync3D (the companion Android app) so the
                 // EXIF3D (Desc3d) and playlist YAML formats stay wire-compatible between the two apps.
-                implementation("tools.jackson.module:jackson-module-kotlin:3.2.3")
-                implementation("tools.jackson.dataformat:jackson-dataformat-yaml:3.2.3")
+                implementation("tools.jackson.module:jackson-module-kotlin:3.2.4")
+                implementation("tools.jackson.dataformat:jackson-dataformat-yaml:3.2.4")
                 // Same coordinates as CameraSync3D's app/build.gradle, so the shared playlist item
                 // Composable (synced from Android) can use coil3.compose.SubcomposeAsyncImage identically
                 // on both platforms.

@@ -216,6 +216,14 @@ if (-not $androidOpenCv) {
 
 # --- Kotlin version check ---
 function Get-AndroidKotlinVersion([string]$rootBuildFilePath) {
+    # The version catalog's `kotlin = "x"` is what the Kotlin plugins actually build with (see
+    # `alias libs.plugins.jetbrains.kotlin.android` in build.gradle): prefer it over build.gradle's
+    # legacy ext.kotlin_version, which can go stale without affecting the build at all.
+    $tomlPath = Join-Path (Split-Path -Parent $rootBuildFilePath) "gradle\libs.versions.toml"
+    if (Test-Path $tomlPath) {
+        $m = [regex]::Match((Get-Content -Path $tomlPath -Raw), '(?m)^\s*kotlin\s*=\s*"([\d.]+)"')
+        if ($m.Success) { return $m.Groups[1].Value }
+    }
     if (-not (Test-Path $rootBuildFilePath)) { return $null }
     $content = Get-Content -Path $rootBuildFilePath -Raw
     $m = [regex]::Match($content, "kotlin_version\s*=\s*['""]([\d.]+)['""]")
