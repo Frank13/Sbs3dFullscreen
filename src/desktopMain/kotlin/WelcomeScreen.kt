@@ -60,6 +60,7 @@ import sbs3dViewer.resources.about_link_label
 import sbs3dViewer.resources.cancel_button
 import sbs3dViewer.resources.choose_jpeg_button
 import sbs3dViewer.resources.choose_playlist_button
+import sbs3dViewer.resources.feedback_link_label
 import sbs3dViewer.resources.file_dialog_title
 import sbs3dViewer.resources.import_playlist_already_exists
 import sbs3dViewer.resources.import_playlist_read_failed_text
@@ -94,6 +95,7 @@ fun WelcomeScreen(
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenFeedback: () -> Unit = {},
     // Overridable so the Store screenshot test can show the button outside the MSIX package.
     initialShowDesktopShortcutButton: Boolean = DesktopShortcut.isAvailable && !DesktopShortcut.exists(),
     // Overridable so the Store screenshot test never shows the VLC-missing banner.
@@ -222,6 +224,10 @@ fun WelcomeScreen(
                     showSettings = false
                     onOpenAbout()
                 },
+                onOpenFeedback = {
+                    showSettings = false
+                    onOpenFeedback()
+                },
                 onDismiss = { showSettings = false },
             )
         }
@@ -285,6 +291,7 @@ private fun WelcomeSettingsDialog(
     shrinkControls: Boolean,
     onShrinkControlsChosen: (Boolean) -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Enumerated once per dialog opening: spinning up a libVLC factory is too heavy to do on
@@ -297,6 +304,10 @@ private fun WelcomeSettingsDialog(
             val scrollState = rememberScrollState()
             Box {
                 Column(modifier = Modifier.verticalScroll(scrollState)) {
+                    OutlinedButton(onClick = onOpenFeedback) {
+                        Text(stringResource(Res.string.feedback_link_label))
+                    }
+                    Spacer(Modifier.height(16.dp))
                     Text(stringResource(Res.string.welcome_settings_language_label))
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -518,9 +518,12 @@ private fun runApp(args: Array<String>) = application {
                                         onOpenPlaylistList = { viewModel.openPlaylistList() },
                                         onOpenGallery = { folder -> viewModel.openGallery(folder) },
                                         onOpenAbout = { viewModel.openAbout() },
+                                        onOpenFeedback = { viewModel.openFeedback() },
                                     )
 
                                     Screen.About -> AboutScreen(onBack = { viewModel.closeAbout() })
+
+                                    Screen.Feedback -> FeedbackScreen(onBack = { viewModel.closeFeedback() })
 
                                     Screen.Gallery -> {
                                         val changeFolderDialogTitle = stringResource(Res.string.playlist_add_photos_directory_dialog_title)

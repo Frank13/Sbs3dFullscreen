@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
-enum class Screen { Welcome, About, Gallery, PlaylistList, PlaylistEdit, PlaylistItem, ImageView, VideoView }
+enum class Screen { Welcome, About, Feedback, Gallery, PlaylistList, PlaylistEdit, PlaylistItem, ImageView, VideoView }
 
 /**
  * Mirrors CameraSync3D's SlideshowViewModel.UiType: a playlist slideshow is a title slide,
@@ -430,6 +430,14 @@ class AppViewModel(initialFile: File?) {
     }
 
     fun closeAbout() {
+        screen = Screen.Welcome
+    }
+
+    fun openFeedback() {
+        screen = Screen.Feedback
+    }
+
+    fun closeFeedback() {
         screen = Screen.Welcome
     }
 
