@@ -77,9 +77,15 @@ fun PlaylistsScreen(
     canCreatePlaylist: (String) -> Boolean,
     // Hoisted by Main.kt so the scroll position survives opening/playing a playlist and coming back.
     listState: LazyListState = rememberLazyListState(),
+    // True while the first scan of the playlists folder runs in the background - see PlaylistEditorState.isLoadingList.
+    isLoading: Boolean = false,
+    // A failed background playlist write (e.g. a deletion) - see PlaylistEditorState.writeError.
+    writeError: PlaylistEditorState.WriteError? = null,
+    onWriteErrorShown: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    PlaylistWriteErrorSnackbar(writeError, onWriteErrorShown, snackbarHostState)
     val vlcMissingToast = stringResource(Res.string.vlc_missing_cannot_play_toast)
     val playWithToast: (Playlist) -> Unit = { playlist ->
         if (!onPlayPlaylist(playlist)) scope.launch { snackbarHostState.showSnackbar(vlcMissingToast) }
@@ -123,8 +129,11 @@ fun PlaylistsScreen(
         scrollable = false,
         screenContent = {
             if (playlists.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(Res.string.playlist_list_empty))
+                // Nothing at all while loading, rather than a "no playlist" message about to be wrong.
+                if (!isLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(stringResource(Res.string.playlist_list_empty))
+                    }
                 }
             } else {
                 Box(Modifier.fillMaxSize()) {

@@ -1,3 +1,4 @@
+import fr.camera3d.camera.feature_playlists.domain.Playlist
 import kotlinx.coroutines.runBlocking
 import java.awt.image.BufferedImage
 import java.io.File
@@ -38,6 +39,7 @@ class PlaylistEditorStateTest {
         editor.addPhotos(listOf(realJpeg(sources, "a.jpg"), realJpeg(sources, "b.jpg")))
 
         assertTrue(editor.rename("Renamed List"))
+        editor.awaitPendingWrites()
 
         val playlist = assertNotNull(editor.editing)
         val newFolder = File(root, "RenamedList")
@@ -85,8 +87,61 @@ class PlaylistEditorStateTest {
         editor.openItem(0)
 
         assertTrue(editor.deleteItem())
+        editor.awaitPendingWrites()
 
         assertEquals(listOf("b.jpg"), editor.editing?.photos?.map { it.filename })
         assertFalse(File(root, "Delete/a.jpg").exists())
+    }
+
+    @Test
+    fun `edits return at once and reach the disk in order`() = runBlocking<Unit> {
+        val editor = PlaylistEditorState(rootOverride = root)
+        editor.startCreate("Order")
+        editor.addPhotos(listOf(realJpeg(sources, "a.jpg")))
+        for (i in 1..20) assertTrue(editor.modifySubtitle("subtitle $i"))
+        editor.openItem(0)
+        assertTrue(editor.modifyItemComment("comment"))
+        // Optimistic: already in memory before anything is written.
+        assertEquals("subtitle 20", editor.editing?.subtitle)
+
+        editor.awaitPendingWrites()
+
+        val onDisk = Playlist.loadPlaylist(DesktopPlaylistStorage(root), "Order")
+        assertEquals("subtitle 20", onDisk.subtitle)
+        assertEquals("comment", onDisk.photos.single().comment)
+        assertEquals(null, editor.writeError)
+    }
+
+    @Test
+    fun `a write that fails is reported instead of thrown`() = runBlocking<Unit> {
+        val editor = PlaylistEditorState(rootOverride = root)
+        editor.startCreate("Gone")
+        editor.awaitPendingWrites()
+        // The folder disappears behind the app's back (e.g. deleted in Explorer).
+        File(root, "Gone").deleteRecursively()
+
+        assertTrue(editor.modifySubtitle("lost"))
+        editor.awaitPendingWrites()
+
+        assertNotNull(editor.writeError)
+        editor.consumeWriteError()
+        assertNull(editor.writeError)
+    }
+
+    @Test
+    fun `deleting a playlist removes its folder and the rescanned list no longer shows it`() = runBlocking<Unit> {
+        val editor = PlaylistEditorState(rootOverride = root)
+        editor.startCreate("Keep")
+        editor.startCreate("Drop")
+        editor.addPhotos(listOf(realJpeg(sources, "a.jpg")))
+
+        assertTrue(editor.delete())
+        assertNull(editor.editing)
+        editor.openList()
+        editor.awaitPendingWrites()
+
+        assertFalse(File(root, "Drop").exists())
+        assertEquals(listOf("Keep"), editor.all.map { it.name })
+        assertFalse(editor.isLoadingList)
     }
 }

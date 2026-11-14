@@ -106,7 +106,7 @@ class PlaylistIndexSafetyTest {
     }
 
     @Test
-    fun `editing a playlist whose index couldn't be read preserves that index and saves in the playlist folder`() {
+    fun `editing a playlist whose index couldn't be read preserves that index and saves in the playlist folder`() = runBlocking<Unit> {
         val folder = File(root, "Unreadable").apply { mkdirs() }
         realJpeg(folder, "a.jpg")
         // Not valid YAML, and no backup: loadPlaylist can only fall back to a disk scan.
@@ -114,12 +114,14 @@ class PlaylistIndexSafetyTest {
         File(folder, PLAYLIST_INDEX_FILENAME).writeText(damaged)
         val editor = PlaylistEditorState(rootOverride = root)
         editor.openList()
+        editor.awaitPendingWrites()
         val fallback = editor.all.single()
         assertTrue(fallback.indexUnreadable)
         assertEquals(folder.absolutePath, fallback.absolutePath)
 
         editor.openForEdit(fallback)
         assertTrue(editor.modifySubtitle("new subtitle"))
+        editor.awaitPendingWrites()
 
         assertEquals(damaged, unreadableCopies(folder).single().readText())
         assertEquals("new subtitle", getYamlPlaylistFromYaml(File(folder, PLAYLIST_INDEX_FILENAME).readText()).subtitle)
@@ -127,28 +129,33 @@ class PlaylistIndexSafetyTest {
 
         // Later saves of the now-valid index must not pile up more "unreadable" copies.
         assertTrue(editor.modifySubtitle("again"))
+        editor.awaitPendingWrites()
         assertEquals(1, unreadableCopies(folder).size)
     }
 
     /** Opens a playlist whose index fails to load only because of [index]'s content, as if just found in the list. */
-    private fun openWithUnparseableIndex(name: String, index: String): PlaylistEditorState {
+    private suspend fun openWithUnparseableIndex(name: String, index: String): PlaylistEditorState {
         val folder = File(root, name).apply { mkdirs() }
         realJpeg(folder, "a.jpg")
         File(folder, PLAYLIST_INDEX_FILENAME).writeText(index)
         return PlaylistEditorState(rootOverride = root).apply {
             openList()
+            awaitPendingWrites()
             openForEdit(all.single())
+            awaitPendingWrites()
         }
     }
 
     @Test
-    fun `a kept copy that loads again can be restored, and nothing is offered afterwards`() {
+    fun `a kept copy that loads again can be restored, and nothing is offered afterwards`() = runBlocking<Unit> {
         val editor = openWithUnparseableIndex("Restore", "formatVersion : 1.0\nname : [\n")
         val folder = File(root, "Restore")
         editor.modifySubtitle("edited while broken") // the photos-only index the restore replaces
+        editor.awaitPendingWrites()
         // The kept copy reads fine again (e.g. it was only unreadable because OneDrive was offline).
         assertNotNull(editor.indexRecovery).file.writeText(richIndex)
         editor.openForEdit(assertNotNull(editor.editing))
+        editor.awaitPendingWrites()
         assertTrue(assertNotNull(editor.indexRecovery).restorable)
 
         assertTrue(editor.restoreIndex())
@@ -163,7 +170,7 @@ class PlaylistIndexSafetyTest {
     }
 
     @Test
-    fun `a damaged copy is offered but can't be restored, and dismissing it keeps the file`() {
+    fun `a damaged copy is offered but can't be restored, and dismissing it keeps the file`() = runBlocking<Unit> {
         val damaged = "formatVersion : 1.0\nname : [\n"
         val editor = openWithUnparseableIndex("Damaged", damaged)
         val folder = File(root, "Damaged")
@@ -175,6 +182,7 @@ class PlaylistIndexSafetyTest {
         assertEquals(damaged, recovery.file.readText())
 
         editor.dismissIndexRecovery()
+        editor.awaitPendingWrites()
 
         assertEquals(null, editor.indexRecovery)
         val kept = folder.listFiles { f -> f.name.startsWith(PLAYLIST_INDEX_KEPT_PREFIX) }.orEmpty().single()
@@ -189,6 +197,7 @@ class PlaylistIndexSafetyTest {
         assertNotNull(editor.importFolder(external))
 
         editor.addPhotos(listOf(realJpeg(sources, "2.jpg")))
+        editor.awaitPendingWrites()
 
         assertTrue(File(root, "Plain/2.jpg").exists())
         assertTrue(File(root, "Plain/$PLAYLIST_INDEX_FILENAME").exists())

@@ -611,6 +611,9 @@ private fun runApp(args: Array<String>) = application {
                                         },
                                         canCreatePlaylist = viewModel::canCreatePlaylist,
                                         listState = playlistListState,
+                                        isLoading = viewModel.playlistEditor.isLoadingList,
+                                        writeError = viewModel.playlistEditor.writeError,
+                                        onWriteErrorShown = viewModel.playlistEditor::consumeWriteError,
                                     )
 
                                     Screen.PlaylistEdit -> viewModel.playlistEditor.editing?.let { playlist ->
@@ -657,6 +660,8 @@ private fun runApp(args: Array<String>) = application {
                                             indexRecovery = viewModel.playlistEditor.indexRecovery,
                                             onRestoreIndex = viewModel.playlistEditor::restoreIndex,
                                             onDismissIndexRecovery = viewModel.playlistEditor::dismissIndexRecovery,
+                                            writeError = viewModel.playlistEditor.writeError,
+                                            onWriteErrorShown = viewModel.playlistEditor::consumeWriteError,
                                         )
                                     }
 
@@ -676,6 +681,8 @@ private fun runApp(args: Array<String>) = application {
                                                 onModifyMuted = viewModel::modifyItemMuted,
                                                 onModifyFullscreenScroll = viewModel::modifyItemFullscreenScroll,
                                                 onDelete = viewModel::deletePlaylistItem,
+                                                writeError = viewModel.playlistEditor.writeError,
+                                                onWriteErrorShown = viewModel.playlistEditor::consumeWriteError,
                                             )
                                         }
                                     }

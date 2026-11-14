@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
+import org.jetbrains.compose.resources.getString
 import java.awt.Desktop
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -127,8 +131,11 @@ fun PlaylistScreen(
     onOpenPlaylistItem: (Int) -> Unit,
     // Non-null when the playlist's index couldn't be read - see PlaylistEditorState.indexRecovery.
     indexRecovery: PlaylistEditorState.IndexRecovery? = null,
-    onRestoreIndex: () -> Boolean = { false },
+    onRestoreIndex: suspend () -> Boolean = { false },
     onDismissIndexRecovery: () -> Unit = {},
+    // A failed background write of this playlist - see PlaylistEditorState.writeError.
+    writeError: PlaylistEditorState.WriteError? = null,
+    onWriteErrorShown: () -> Unit = {},
     // Hoisted by Main.kt so the scroll position survives opening a playlist item and coming back.
     lazyListState: LazyListState = rememberLazyListState(),
 ) {
@@ -137,6 +144,7 @@ fun PlaylistScreen(
     val vlcMissingToast = stringResource(Res.string.vlc_missing_cannot_play_toast)
     val indexRestoredToast = stringResource(Res.string.playlist_index_restored)
     val indexRestoreFailedToast = stringResource(Res.string.playlist_index_restore_failed)
+    PlaylistWriteErrorSnackbar(writeError, onWriteErrorShown, snackbarHostState)
 
     val strings = PlaylistScreenStrings(
         ok = stringResource(Res.string.ok_button),
@@ -256,8 +264,10 @@ fun PlaylistScreen(
                 IndexRecoveryBanner(
                     recovery = recovery,
                     onRestore = {
-                        val restored = onRestoreIndex()
-                        scope.launch { snackbarHostState.showSnackbar(if (restored) indexRestoredToast else indexRestoreFailedToast) }
+                        scope.launch {
+                            val restored = onRestoreIndex()
+                            snackbarHostState.showSnackbar(if (restored) indexRestoredToast else indexRestoreFailedToast)
+                        }
                     },
                     onDismiss = onDismissIndexRecovery,
                 )
@@ -517,6 +527,29 @@ fun PlaylistScreen(
             }
         },
     )
+}
+
+/**
+ * Shows [writeError] (a playlist write that failed in the background - see PlaylistEditorState's
+ * threading note) on whichever playlist screen is up, then [onShown] clears it so the next screen
+ * doesn't show it again. Used by PlaylistScreen, PlaylistItemScreen and PlaylistsScreen.
+ */
+@Composable
+internal fun PlaylistWriteErrorSnackbar(
+    writeError: PlaylistEditorState.WriteError?,
+    onShown: () -> Unit,
+    snackbarHostState: SnackbarHostState,
+) {
+    // Collected from one long-lived effect rather than keyed on the error: onShown() clears it, which
+    // would otherwise cancel the effect - and so dismiss the snackbar - right away.
+    val latestError by rememberUpdatedState(writeError)
+    val latestOnShown by rememberUpdatedState(onShown)
+    LaunchedEffect(snackbarHostState) {
+        snapshotFlow { latestError }.filterNotNull().collect { error ->
+            latestOnShown()
+            snackbarHostState.showSnackbar(getString(Res.string.playlist_error_while_saving, error.message))
+        }
+    }
 }
 
 /**

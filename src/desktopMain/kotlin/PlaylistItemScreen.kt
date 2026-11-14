@@ -47,9 +47,13 @@ fun PlaylistItemScreen(
     onModifyMuted: (Boolean) -> Unit,
     onModifyFullscreenScroll: (FullscreenScroll) -> Unit,
     onDelete: () -> Boolean,
+    // A failed background write of the playlist - see PlaylistEditorState.writeError.
+    writeError: PlaylistEditorState.WriteError? = null,
+    onWriteErrorShown: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    PlaylistWriteErrorSnackbar(writeError, onWriteErrorShown, snackbarHostState)
 
     val strings = PlaylistItemScreenStrings(
         ok = stringResource(Res.string.ok_button),

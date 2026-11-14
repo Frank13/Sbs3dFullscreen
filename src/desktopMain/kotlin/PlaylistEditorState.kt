@@ -10,9 +10,12 @@ import fr.camera3d.camera.feature_playlists.domain.PlaylistItem
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
 import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Executors
+import javax.swing.SwingUtilities
 
 /**
  * Holds the PlaylistList/PlaylistEdit/PlaylistItem screens' state (the scanned playlists, the one
@@ -25,12 +28,22 @@ import java.io.IOException
  * currentImageIndex/playingPlaylist - see AppViewModel.onPlaylistChosen/playPlaylist/
  * playEditingPlaylist), since those are core navigation state shared with the plain-file-selection
  * path, not playlist-editor-specific.
+ *
+ * **Threading.** No disk I/O runs on the UI thread: the playlists folder can be on OneDrive, where a
+ * write can block or throw ("The cloud file provider is not running"). Edits are optimistic - the
+ * in-memory [editing] playlist changes at once (the synced Android composables expect an immediate
+ * Boolean) and the disk work is queued on [writer], a single background thread that runs jobs
+ * strictly in order, so a later edit, delete or list rescan always sees the earlier writes on disk.
+ * Jobs never suspend: they post their UI-state updates with [onUi] (the AWT event thread Compose runs
+ * on), which keeps that order too. A failed job is reported through [writeError] (a snackbar on
+ * whichever playlist screen is showing) instead of escaping into the window's crash handler.
  */
 class PlaylistEditorState(rootOverride: File? = null) {
     // Resolved lazily (not on every access) so the one-time rename of the pre-rebrand
     // Pictures/sbs3dFullscreen folder happens at most once per run - existing users keep their
     // playlists. Skipped if the new folder already exists, so nothing is ever overwritten.
     // [rootOverride] lets tests work in a temp folder instead of the user's real Pictures.
+    // First touched from a writer job (see openList), never from the UI thread.
     private val playlistsRoot: File by lazy {
         if (rootOverride != null) return@lazy rootOverride
         val pictures = File(System.getProperty("user.home"), "Pictures")
@@ -40,8 +53,18 @@ class PlaylistEditorState(rootOverride: File? = null) {
         root
     }
 
+    private val writerExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "playlist-writer").apply { isDaemon = true }
+    }
+    private val writer = writerExecutor.asCoroutineDispatcher()
+
     // Playlists found under playlistsRoot, shown on the PlaylistList screen.
     var all by mutableStateOf<List<Playlist>>(emptyList())
+        private set
+
+    // True until the first scan requested by openList has filled [all], so the PlaylistList screen
+    // doesn't flash its "no playlist" message meanwhile.
+    var isLoadingList by mutableStateOf(false)
         private set
 
     // The playlist currently open in the PlaylistEdit screen (name/photos/etc.), null otherwise.
@@ -63,10 +86,51 @@ class PlaylistEditorState(rootOverride: File? = null) {
     var isCopying by mutableStateOf(false)
         private set
 
+    /** A failed background playlist write, shown once by PlaylistWriteErrorSnackbar then [consumeWriteError]ed. */
+    data class WriteError(val token: Int, val message: String)
+
+    var writeError by mutableStateOf<WriteError?>(null)
+        private set
+    private var writeErrorCounter = 0
+
+    fun consumeWriteError() {
+        writeError = null
+    }
+
+    /** Runs [block] on the UI (AWT event) thread, after every UI update posted before it. */
+    private fun onUi(block: () -> Unit) = SwingUtilities.invokeLater(block)
+
+    /**
+     * Queues [block] on [writer]. Any exception is reported through [writeError] rather than thrown;
+     * [onFailure] (also run on [writer], so it may touch the disk) can then return a UI-thread fix-up,
+     * e.g. reverting an optimistic change that didn't make it to disk.
+     */
+    private fun enqueue(what: String, onFailure: (() -> (() -> Unit)?)? = null, block: () -> Unit) {
+        writerExecutor.execute {
+            try {
+                block()
+            } catch (e: Exception) {
+                System.err.println("Playlist $what failed: $e")
+                Analytics.logEvent("app_error", mapOf("type" to "playlist_write", "action" to what))
+                val fixUp = runCatching { onFailure?.invoke() }.getOrNull()
+                onUi {
+                    fixUp?.invoke()
+                    writeError = WriteError(++writeErrorCounter, e.message ?: e.javaClass.simpleName)
+                }
+            }
+        }
+    }
+
+    /** Waits until every job queued so far, and the UI updates they posted, are done - for tests. */
+    suspend fun awaitPendingWrites() {
+        withContext(writer) {}
+        withContext(Dispatchers.Main) {}
+    }
+
     private suspend fun <T> copying(block: () -> T): T {
         isCopying = true
         try {
-            return withContext(Dispatchers.IO) { block() }
+            return withContext(writer) { block() }
         } finally {
             isCopying = false
         }
@@ -75,6 +139,17 @@ class PlaylistEditorState(rootOverride: File? = null) {
     private fun loadAllFromRoot(): List<Playlist> {
         val dirs = playlistsRoot.listFiles { f -> f.isDirectory } ?: emptyArray()
         return dirs.sortedBy { it.name.lowercase() }.map { load(playlistsRoot, it.name) }
+    }
+
+    /** Rescans the list after every write queued so far (so it can't show a stale playlist). */
+    private fun reloadList() {
+        enqueue("list") {
+            val playlists = loadAllFromRoot()
+            onUi {
+                all = playlists
+                isLoadingList = false
+            }
+        }
     }
 
     /**
@@ -91,13 +166,14 @@ class PlaylistEditorState(rootOverride: File? = null) {
 
     /** Scans playlistsRoot for playlist folders - see AppViewModel.openPlaylistList. */
     fun openList() {
-        all = loadAllFromRoot()
+        if (all.isEmpty()) isLoadingList = true
         enteredFromList = false
+        reloadList()
     }
 
     /** Re-scans playlistsRoot without leaving the PlaylistList screen. */
     fun refreshList() {
-        all = loadAllFromRoot()
+        reloadList()
     }
 
     /**
@@ -129,38 +205,47 @@ class PlaylistEditorState(rootOverride: File? = null) {
      * the copy doesn't depend on the user editing anything.
      */
     private fun beginEditing(playlist: Playlist) {
-        editing = if (playlist.indexUnreadable) {
-            try {
-                storageFor(playlist).preserveIndexAside(playlist.getDirName())
-                Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
-                playlist.copy(indexUnreadable = false)
-            } catch (e: IOException) {
-                playlist
+        editing = playlist
+        indexRecovery = null
+        enqueue("open") {
+            var preserved = false
+            if (playlist.indexUnreadable) {
+                try {
+                    storageFor(playlist).preserveIndexAside(playlist.getDirName())
+                    Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
+                    preserved = true
+                } catch (e: IOException) {
+                    // kept in place: persist() tries again on the first save
+                }
             }
-        } else {
-            playlist
+            val recovery = computeIndexRecovery(playlist.copy(indexUnreadable = playlist.indexUnreadable && !preserved))
+            onUi {
+                if (isStillEditing(playlist)) {
+                    if (preserved) editing = editing?.copy(indexUnreadable = false)
+                    indexRecovery = recovery
+                }
+            }
         }
-        refreshIndexRecovery()
     }
+
+    /** Whether [editing] is still the playlist (folder) [playlist] was snapshotted from. */
+    private fun isStillEditing(playlist: Playlist) = editing?.absolutePath == playlist.absolutePath
 
     private fun storageFor(playlist: Playlist): DesktopPlaylistStorage {
         val folder = File(playlist.absolutePath)
         return DesktopPlaylistStorage(folder.parentFile ?: folder)
     }
 
-    private fun refreshIndexRecovery() {
-        val playlist = editing
-        indexRecovery = when {
-            playlist == null -> null
-            playlist.indexUnreadable -> {
-                val index = File(playlist.absolutePath, PLAYLIST_INDEX_FILENAME)
-                IndexRecovery(index, keptAside = false, restorable = fileIsValidIndex(index))
-            }
-            else -> unreadableIndexCopies(File(playlist.absolutePath)).firstOrNull()?.let {
+    /** Reads what [indexRecovery] should be for [playlist] - disk I/O, so on [writer] only. */
+    private fun computeIndexRecovery(playlist: Playlist): IndexRecovery? =
+        if (playlist.indexUnreadable) {
+            val index = File(playlist.absolutePath, PLAYLIST_INDEX_FILENAME)
+            IndexRecovery(index, keptAside = false, restorable = fileIsValidIndex(index))
+        } else {
+            unreadableIndexCopies(File(playlist.absolutePath)).firstOrNull()?.let {
                 IndexRecovery(it, keptAside = true, restorable = fileIsValidIndex(it))
             }
         }
-    }
 
     private fun fileIsValidIndex(file: File): Boolean =
         try {
@@ -176,27 +261,34 @@ class PlaylistEditorState(rootOverride: File? = null) {
      * keeps it as the .bak. Other kept copies are marked as handled so the banner doesn't come back for
      * an older one. Returns false (nothing changed) if the index still can't be read.
      */
-    fun restoreIndex(): Boolean {
+    suspend fun restoreIndex(): Boolean {
         val recovery = indexRecovery ?: return false
         val playlist = editing ?: return false
         val folder = File(playlist.absolutePath)
         val root = folder.parentFile ?: return false
-        try {
-            if (recovery.keptAside) {
-                val content = recovery.file.readText()
-                if (!isValidPlaylistIndex(content)) return false
-                DesktopPlaylistStorage(root).writeIndexFile(playlist.getDirName(), folder.absolutePath, content)
-                recovery.file.delete()
-                markCopiesKept(folder)
+        val (reloaded, newRecovery) = withContext(writer) {
+            val reloaded = try {
+                var ok = true
+                if (recovery.keptAside) {
+                    val content = recovery.file.readText()
+                    if (isValidPlaylistIndex(content)) {
+                        DesktopPlaylistStorage(root).writeIndexFile(playlist.getDirName(), folder.absolutePath, content)
+                        recovery.file.delete()
+                        markCopiesKept(folder)
+                    } else {
+                        ok = false
+                    }
+                }
+                if (ok) load(root, folder.name).takeUnless { it.indexUnreadable } else null
+            } catch (e: IOException) {
+                null
             }
-            val reloaded = load(root, folder.name)
-            if (reloaded.indexUnreadable) return false
-            editing = reloaded
-        } catch (e: IOException) {
-            return false
-        } finally {
-            refreshIndexRecovery()
+            reloaded to computeIndexRecovery(reloaded ?: playlist)
         }
+        if (!isStillEditing(playlist)) return false
+        indexRecovery = newRecovery
+        if (reloaded == null) return false
+        editing = reloaded
         Analytics.logEvent("playlist_index_restored")
         return true
     }
@@ -204,8 +296,10 @@ class PlaylistEditorState(rootOverride: File? = null) {
     /** The banner's Dismiss button: keeps the copies (renamed `playlistIndex.kept-*`) but stops offering them. */
     fun dismissIndexRecovery() {
         val playlist = editing ?: return
-        markCopiesKept(File(playlist.absolutePath))
-        refreshIndexRecovery()
+        indexRecovery = null
+        enqueue("dismiss_index_recovery") {
+            markCopiesKept(File(playlist.absolutePath))
+        }
     }
 
     private fun markCopiesKept(folder: File) {
@@ -225,7 +319,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
     fun returnFromChildScreen(): Screen {
         val target = if (enteredFromList) Screen.PlaylistList else Screen.Welcome
         enteredFromList = false
-        if (target == Screen.PlaylistList) all = loadAllFromRoot()
+        if (target == Screen.PlaylistList) reloadList()
         return target
     }
 
@@ -244,9 +338,9 @@ class PlaylistEditorState(rootOverride: File? = null) {
         // display name would get - otherwise the two could coexist as distinct directories that
         // both normalize to the same Playlist.getDirName(), which broke the PlaylistList's
         // LazyColumn item keys (duplicate key crash).
-        val destination = File(playlistsRoot, sanitizedDirName(folder.name))
-        if (destination.exists()) return null
         val playlist = copying {
+            val destination = File(playlistsRoot, sanitizedDirName(folder.name))
+            if (destination.exists()) return@copying null
             playlistsRoot.mkdirs()
             try {
                 folder.copyRecursively(destination)
@@ -255,13 +349,15 @@ class PlaylistEditorState(rootOverride: File? = null) {
                 throw e
             }
             load(playlistsRoot, destination.name)
-        }
+        } ?: return null
         beginEditing(playlist)
         Analytics.logEvent("playlist_created", mapOf("source" to "import"))
         return playlist
     }
 
-    /** Whether a new playlist named [name] wouldn't collide with an existing one already on disk. */
+    /** Whether a new playlist named [name] wouldn't collide with an existing one already on disk.
+     *  A single exists() check, the only disk access left on the UI thread: the name dialog
+     *  validates synchronously as the user types. */
     fun canCreate(name: String): Boolean {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return true
@@ -272,7 +368,8 @@ class PlaylistEditorState(rootOverride: File? = null) {
      * Creates a playlist folder under Pictures/SBS 3D Viewer/{name} and opens it for editing,
      * mirroring CameraSync3D's create-then-add-photos flow. Assumes the caller already checked
      * [canCreate]; if the sanitized name still collides with an existing playlist, that existing
-     * playlist is reopened instead. Returns false (no-op) for a blank name.
+     * playlist is reopened instead (once the queued job finds it). Returns false (no-op) for a blank
+     * name.
      */
     fun startCreate(name: String): Boolean {
         val trimmedName = name.trim()
@@ -281,16 +378,20 @@ class PlaylistEditorState(rootOverride: File? = null) {
         // spaces/accents intact) is kept separately in the Playlist itself.
         val dirName = sanitizedDirName(trimmedName)
         val folder = File(playlistsRoot, dirName)
-        folder.mkdirs()
-
-        val storage = DesktopPlaylistStorage(playlistsRoot)
-        val playlist = if (storage.indexFileExists(dirName)) {
-            load(playlistsRoot, dirName)
-        } else {
-            Playlist(name = trimmedName, absolutePath = folder.absolutePath).also { it.save(storage) }
-                .also { Analytics.logEvent("playlist_created", mapOf("source" to "new")) }
+        val created = Playlist(name = trimmedName, absolutePath = folder.absolutePath)
+        editing = created
+        indexRecovery = null
+        enqueue("create") {
+            folder.mkdirs()
+            val storage = DesktopPlaylistStorage(playlistsRoot)
+            if (storage.indexFileExists(dirName)) {
+                val existing = load(playlistsRoot, dirName)
+                onUi { if (isStillEditing(created)) beginEditing(existing) }
+            } else {
+                created.save(storage)
+                Analytics.logEvent("playlist_created", mapOf("source" to "new"))
+            }
         }
-        beginEditing(playlist)
         return true
     }
 
@@ -330,11 +431,12 @@ class PlaylistEditorState(rootOverride: File? = null) {
             val isVideo = isVideoFilename(destName)
             PlaylistItem(destName, dest.toPath().toUri().toASCIIString(), isHalfWidth = isVideo, isVideo = isVideo)
         } }
-        val updatedPlaylist = playlist.copy(photos = playlist.photos + copiedItems)
-        commit(withContext(Dispatchers.IO) { persist(updatedPlaylist) }, updatedPlaylist.indexUnreadable)
-        if (copiedItems.isNotEmpty()) {
-            Analytics.logEvent("playlist_photos_added", mapOf("count" to copiedItems.size))
-        }
+        if (copiedItems.isEmpty() || !isStillEditing(playlist)) return
+        // From the current state, not the snapshot taken before the copy: nothing else could change
+        // it meanwhile (CopyingFilesOverlay blocks clicks), but this keeps that true by construction.
+        val current = editing ?: return
+        save(current.copy(photos = current.photos + copiedItems))
+        Analytics.logEvent("playlist_photos_added", mapOf("count" to copiedItems.size))
     }
 
     /** Appends " (2)", " (3)", ... before the extension until [proposedName] no longer collides with [existingNames]. */
@@ -374,8 +476,9 @@ class PlaylistEditorState(rootOverride: File? = null) {
             taken += dest.name
             addedNames += dest.name
         } }
-        if (addedNames.isNotEmpty()) {
-            save(playlist.copy(soundtrack = playlist.soundtrack + addedNames))
+        if (addedNames.isNotEmpty() && isStillEditing(playlist)) {
+            val current = editing ?: return addedNames.size
+            save(current.copy(soundtrack = current.soundtrack + addedNames))
             Analytics.logEvent("playlist_music_added", mapOf("count" to addedNames.size))
         }
         return addedNames.size
@@ -385,8 +488,9 @@ class PlaylistEditorState(rootOverride: File? = null) {
     fun removeSoundtrackItem(index: Int) {
         val playlist = editing ?: return
         val filename = playlist.soundtrack.getOrNull(index) ?: return
-        save(playlist.copy(soundtrack = playlist.soundtrack.filterIndexed { i, _ -> i != index }))
-        File(playlist.absolutePath, filename).delete()
+        save(playlist.copy(soundtrack = playlist.soundtrack.filterIndexed { i, _ -> i != index })) {
+            File(playlist.absolutePath, filename).delete()
+        }
     }
 
     /** Files (in playback order) for the playlist currently open in the editor - see
@@ -402,7 +506,8 @@ class PlaylistEditorState(rootOverride: File? = null) {
     private fun sanitizedDirName(name: String): String =
         name.trim().replace(Regex("[\\\\/:*?\"<>|]"), "").replace(" ", "").ifEmpty { "Playlist" }
 
-    /** Whether newName's folder doesn't collide with another playlist already on disk. */
+    /** Whether newName's folder doesn't collide with another playlist already on disk - an exists()
+     *  check, kept synchronous for the same reason as [canCreate]. */
     fun canRename(newName: String): Boolean {
         val playlist = editing ?: return true
         if (newName.equals(playlist.name, ignoreCase = true)) return true
@@ -410,7 +515,13 @@ class PlaylistEditorState(rootOverride: File? = null) {
         return !File(root, sanitizedDirName(newName)).exists()
     }
 
-    /** Renames the playlist being edited: moves its folder on disk and updates the index. */
+    /**
+     * Renames the playlist being edited: moves its folder on disk and updates the index. Optimistic
+     * like every edit - the in-memory playlist (and each photo's URI, an absolute path resolved at load
+     * time) points at the new folder at once, so edits queued after this one write there. If the move
+     * fails (e.g. a file of the folder is open elsewhere), the playlist is reloaded from its old folder
+     * and the error is shown.
+     */
     fun rename(newName: String): Boolean {
         val playlist = editing ?: return false
         val trimmedName = newName.trim()
@@ -418,12 +529,21 @@ class PlaylistEditorState(rootOverride: File? = null) {
         val currentFolder = File(playlist.absolutePath)
         val root = currentFolder.parentFile ?: return false
         val newFolder = File(root, sanitizedDirName(trimmedName))
-        if (newFolder != currentFolder && !currentFolder.renameTo(newFolder)) return false
-        save(playlist.copy(name = trimmedName, absolutePath = newFolder.absolutePath))
-        // The index only stores filenames, but each in-memory PlaylistItem.imageUriString is an
-        // absolute URI resolved at load time - still pointing into the old folder after the move.
-        // Reloading re-resolves them against newFolder, so Play/thumbnails keep working.
-        beginEditing(load(root, newFolder.name))
+        val renamed = playlist.copy(
+            name = trimmedName,
+            absolutePath = newFolder.absolutePath,
+            photos = playlist.photos.map { it.copy(imageUriString = File(newFolder, it.filename).toPath().toUri().toASCIIString()) },
+        )
+        editing = renamed
+        enqueue("rename", onFailure = {
+            val reverted = load(root, currentFolder.name)
+            ({ if (isStillEditing(renamed)) editing = reverted })
+        }) {
+            if (newFolder != currentFolder && !currentFolder.renameTo(newFolder)) {
+                throw IOException("Cannot rename the folder ${currentFolder.name} to ${newFolder.name}")
+            }
+            persist(renamed)
+        }
         return true
     }
 
@@ -542,49 +662,68 @@ class PlaylistEditorState(rootOverride: File? = null) {
         val index = editingItemIndex ?: return false
         val photo = playlist.photos.getOrNull(index) ?: return false
         val newPhotos = playlist.photos.toMutableList().apply { removeAt(index) }.toList()
-        save(playlist.copy(photos = newPhotos))
-        playlistItemFile(photo.imageUriString).delete()
+        // The file is only deleted once the index no longer lists it.
+        save(playlist.copy(photos = newPhotos)) {
+            playlistItemFile(photo.imageUriString).delete()
+        }
         return true
     }
 
-    /** Deletes the playlist being edited (folder and all) from disk. */
+    /**
+     * Deletes the playlist being edited (folder and all) from disk - in the background, as a playlist
+     * with videos can take a while to delete. The list screen the caller then returns to is rescanned
+     * after the deletion, so it shows what is really left; a failure (e.g. a file open elsewhere) is
+     * reported through [writeError].
+     */
     fun delete(): Boolean {
         val playlist = editing ?: return false
-        val deleted = File(playlist.absolutePath).deleteRecursively()
-        if (deleted) {
-            editing = null
+        editing = null
+        indexRecovery = null
+        enqueue("delete") {
+            if (!File(playlist.absolutePath).deleteRecursively()) {
+                throw IOException("Some files of ${File(playlist.absolutePath).name} could not be deleted")
+            }
         }
-        return deleted
-    }
-
-    private fun save(updated: Playlist) {
-        commit(persist(updated), updated.indexUnreadable)
-        Analytics.logEvent("playlist_saved")
+        return true
     }
 
     /**
-     * Writes [playlist]'s index and returns it as now persisted. A Playlist.indexUnreadable playlist
-     * (a disk-scan fallback standing in for an index that couldn't be read at load time) gets its
-     * existing index moved aside first (DesktopPlaylistStorage.preserveIndexAside), so the original
-     * metadata survives as a playlistIndex.unreadable-*.yaml file instead of being overwritten by
-     * this stripped version. The flag is then cleared: the index just written is this playlist's own.
+     * Makes [updated] the playlist being edited now, and queues writing its index - then [afterWrite]
+     * (e.g. deleting a file the index no longer lists), only if that write succeeded.
      */
-    private fun persist(playlist: Playlist): Playlist {
+    private fun save(updated: Playlist, afterWrite: () -> Unit = {}) {
+        editing = updated
+        Analytics.logEvent("playlist_saved")
+        enqueue("save") {
+            persist(updated)
+            afterWrite()
+            if (updated.indexUnreadable) {
+                // persist() just moved the unreadable index aside: the banner can now offer it.
+                val recovery = computeIndexRecovery(updated.copy(indexUnreadable = false))
+                onUi {
+                    if (isStillEditing(updated)) {
+                        editing = editing?.copy(indexUnreadable = false)
+                        indexRecovery = recovery
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Writes [playlist]'s index - on [writer] only. A Playlist.indexUnreadable playlist (a disk-scan
+     * fallback standing in for an index that couldn't be read at load time) gets its existing index
+     * moved aside first (DesktopPlaylistStorage.preserveIndexAside), so the original metadata survives
+     * as a playlistIndex.unreadable-*.yaml file instead of being overwritten by this stripped version;
+     * if that move fails, nothing is written.
+     */
+    private fun persist(playlist: Playlist) {
         val storage = storageFor(playlist)
         if (playlist.indexUnreadable) {
             storage.preserveIndexAside(playlist.getDirName())
             Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
         }
-        val persisted = playlist.copy(indexUnreadable = false)
-        persisted.save(storage)
-        return persisted
-    }
-
-    /** Makes [persisted] (a [persist] result) the playlist being edited - the banner only needs a
-     *  refresh when that save just moved an unreadable index aside. */
-    private fun commit(persisted: Playlist, wasIndexUnreadable: Boolean) {
-        editing = persisted
-        if (wasIndexUnreadable) refreshIndexRecovery()
+        playlist.copy(indexUnreadable = false).save(storage)
     }
 
     fun closeEdit() {
