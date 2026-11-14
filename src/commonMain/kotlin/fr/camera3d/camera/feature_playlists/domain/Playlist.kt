@@ -46,7 +46,12 @@ data class Playlist(
     val creditsZPercent : Float = 0f, // depth shift (stereo "altitude") of the credits
     val creditsStyle : TextStyleConfig = TextStyleConfig.CREDITS_DEFAULT, // font/color/bounding box (top/left/right/bottom) of the credits
     val creditsPlacement : CreditsPlacement = CreditsPlacement.END_SLIDE,
-    var photos : List<PlaylistItem> = listOf() // list of playlists
+    var photos : List<PlaylistItem> = listOf(), // list of playlists
+    // true when an index file exists but couldn't be read or parsed, so this Playlist is only a disk-scan
+    // fallback (see loadPlaylist) missing all the index metadata (comments, videos, soundtrack, styles...).
+    // Saving it as-is would overwrite - and so wipe - that index: platform code must first preserve the
+    // unreadable index (or warn the user) before calling save().
+    val indexUnreadable : Boolean = false
 ){
 
     /** true if credits roll on the end slide, before its "the end" animation */
@@ -176,7 +181,7 @@ data class Playlist(
                         withFileVerification = false, buildUris = buildUris, type = type
                     )
                 } catch (e: Exception) {
-                    createFromDisk(storage, fullPlaylistFolder)
+                    createFromDisk(storage, fullPlaylistFolder).copy(indexUnreadable = true)
                 }
             }
             return createFromDisk(storage, fullPlaylistFolder)
@@ -199,7 +204,7 @@ data class Playlist(
                         type=type
                     )
                 } catch (e:Exception){
-                    createFromDisk(storage, fullPlaylistFolder)
+                    createFromDisk(storage, fullPlaylistFolder).copy(indexUnreadable = true)
                 }
             }
             return createFromDisk(storage, fullPlaylistFolder)

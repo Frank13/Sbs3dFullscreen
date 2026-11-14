@@ -71,9 +71,20 @@ class PlaylistEditorState(rootOverride: File? = null) {
     }
 
     private fun loadAllFromRoot(): List<Playlist> {
-        val storage = DesktopPlaylistStorage(playlistsRoot)
         val dirs = playlistsRoot.listFiles { f -> f.isDirectory } ?: emptyArray()
-        return dirs.sortedBy { it.name.lowercase() }.map { Playlist.loadPlaylist(storage, it.name) }
+        return dirs.sortedBy { it.name.lowercase() }.map { load(playlistsRoot, it.name) }
+    }
+
+    /**
+     * Playlist.loadPlaylist, plus a desktop fix-up: its disk-scan fallback (createFromDisk, synced
+     * from Android - used when there's no index yet, or one that can't be read) sets absolutePath to
+     * the bare folder name, which save()/addPhotos would otherwise resolve against the process's
+     * working directory instead of the playlist folder.
+     */
+    private fun load(root: File, dirName: String): Playlist {
+        val playlist = Playlist.loadPlaylist(DesktopPlaylistStorage(root), dirName)
+        return if (File(playlist.absolutePath).isAbsolute) playlist
+        else playlist.copy(absolutePath = File(root, dirName).absolutePath)
     }
 
     /** Scans playlistsRoot for playlist folders - see AppViewModel.openPlaylistList. */
@@ -133,7 +144,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
                 destination.deleteRecursively()
                 throw e
             }
-            Playlist.loadPlaylist(DesktopPlaylistStorage(playlistsRoot), destination.name)
+            load(playlistsRoot, destination.name)
         }
         editing = playlist
         Analytics.logEvent("playlist_created", mapOf("source" to "import"))
@@ -164,7 +175,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
 
         val storage = DesktopPlaylistStorage(playlistsRoot)
         val playlist = if (storage.indexFileExists(dirName)) {
-            Playlist.loadPlaylist(storage, dirName)
+            load(playlistsRoot, dirName)
         } else {
             Playlist(name = trimmedName, absolutePath = folder.absolutePath).also { it.save(storage) }
                 .also { Analytics.logEvent("playlist_created", mapOf("source" to "new")) }
@@ -177,7 +188,6 @@ class PlaylistEditorState(rootOverride: File? = null) {
     suspend fun addPhotos(files: List<File>) {
         val playlist = editing ?: return
         val folder = File(playlist.absolutePath)
-        val storage = DesktopPlaylistStorage(folder.parentFile ?: folder)
         // Filenames already in the playlist (updated as each file below is processed) - so
         // importing the same file twice, or two different source files that happen to share a
         // name, get distinct "name (2).ext" copies instead of colliding: two PlaylistItems with
@@ -211,8 +221,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
             PlaylistItem(destName, dest.toPath().toUri().toASCIIString(), isHalfWidth = isVideo, isVideo = isVideo)
         } }
         val updatedPlaylist = playlist.copy(photos = playlist.photos + copiedItems)
-        withContext(Dispatchers.IO) { updatedPlaylist.save(storage) }
-        editing = updatedPlaylist
+        editing = withContext(Dispatchers.IO) { persist(updatedPlaylist) }
         if (copiedItems.isNotEmpty()) {
             Analytics.logEvent("playlist_photos_added", mapOf("count" to copiedItems.size))
         }
@@ -304,7 +313,7 @@ class PlaylistEditorState(rootOverride: File? = null) {
         // The index only stores filenames, but each in-memory PlaylistItem.imageUriString is an
         // absolute URI resolved at load time - still pointing into the old folder after the move.
         // Reloading re-resolves them against newFolder, so Play/thumbnails keep working.
-        editing = Playlist.loadPlaylist(DesktopPlaylistStorage(root), newFolder.name)
+        editing = load(root, newFolder.name)
         return true
     }
 
@@ -439,11 +448,27 @@ class PlaylistEditorState(rootOverride: File? = null) {
     }
 
     private fun save(updated: Playlist) {
-        val folder = File(updated.absolutePath)
-        val storage = DesktopPlaylistStorage(folder.parentFile ?: folder)
-        updated.save(storage)
-        editing = updated
+        editing = persist(updated)
         Analytics.logEvent("playlist_saved")
+    }
+
+    /**
+     * Writes [playlist]'s index and returns it as now persisted. A Playlist.indexUnreadable playlist
+     * (a disk-scan fallback standing in for an index that couldn't be read at load time) gets its
+     * existing index moved aside first (DesktopPlaylistStorage.preserveIndexAside), so the original
+     * metadata survives as a playlistIndex.unreadable-*.yaml file instead of being overwritten by
+     * this stripped version. The flag is then cleared: the index just written is this playlist's own.
+     */
+    private fun persist(playlist: Playlist): Playlist {
+        val folder = File(playlist.absolutePath)
+        val storage = DesktopPlaylistStorage(folder.parentFile ?: folder)
+        if (playlist.indexUnreadable) {
+            storage.preserveIndexAside(playlist.getDirName())
+            Analytics.logEvent("app_error", mapOf("type" to "playlist_index_unreadable"))
+        }
+        val persisted = playlist.copy(indexUnreadable = false)
+        persisted.save(storage)
+        return persisted
     }
 
     fun closeEdit() {

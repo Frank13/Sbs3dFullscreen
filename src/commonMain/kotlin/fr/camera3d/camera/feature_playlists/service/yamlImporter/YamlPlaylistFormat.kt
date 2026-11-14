@@ -8,6 +8,7 @@ import fr.camera3d.camera.feature_playlists.domain.FullscreenScroll
 import fr.camera3d.camera.feature_playlists.domain.Playlist
 import fr.camera3d.camera.feature_playlists.domain.TextFontFamily
 import fr.camera3d.camera.feature_playlists.domain.TextStyleConfig
+import tools.jackson.databind.DeserializationFeature
 import tools.jackson.dataformat.yaml.YAMLMapper
 import tools.jackson.module.kotlin.kotlinModule
 
@@ -132,7 +133,13 @@ data class YamlPlaylistV1(val formatVersion : Float,
 )
 
 fun getYamlPlaylistFromYaml(yamlDocument : String): YamlPlaylistV1{
-    val mapper = YAMLMapper.builder().addModule(kotlinModule()).build() // Enable YAML parsing with Kotlin support
+    // Unknown properties are ignored, not fatal: an index written by a newer app version (CameraSync3D or
+    // SBS 3D Viewer) that added a field must still load here - otherwise the parse failure made
+    // Playlist.loadPlaylist fall back to a bare disk scan, and the next save wiped the whole index.
+    val mapper = YAMLMapper.builder()
+        .addModule(kotlinModule()) // Enable YAML parsing with Kotlin support
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .build()
     val playlist = mapper.readValue(yamlDocument, YamlPlaylistV1::class.java)
     if (playlist.formatVersion != 1.0f){
         throw Exception("expected version 1.0")
@@ -143,35 +150,37 @@ fun getYamlPlaylistFromYaml(yamlDocument : String): YamlPlaylistV1{
 }
 
 /**
- * Returns a YAML string representing the Playlist
+ * Returns a YAML string representing the Playlist. Every user-provided string goes through
+ * [yamlDoubleQuoted]: a raw `"` (e.g. in a comment) or `\` would otherwise produce an index that no
+ * longer parses, losing the whole playlist metadata on the next load.
  */
 fun PlaylistToYAML(p: Playlist) : String{
     val playlistCore = "# Playlist index for CameraSync3D\n" +
             "formatVersion : 1.0\n" +
-            "name : \"${p.name}\"\n" +
+            "name : ${yamlDoubleQuoted(p.name)}\n" +
             "defaultDuration : ${p.defaultDurationS}\n" +
-            if (p.defaultTransition != "") {"defaultTransition : \"${p.defaultTransition}\"\n"} else {""} +
-            if (p.soundFilename != "") {"soundFilename : ${p.soundFilename}\n"} else {""} +
-            if (p.subtitle != "") {"subtitle : \"${p.subtitle}\"\n"} else {""} +
+            if (p.defaultTransition != "") {"defaultTransition : ${yamlDoubleQuoted(p.defaultTransition)}\n"} else {""} +
+            if (p.soundFilename != "") {"soundFilename : ${yamlDoubleQuoted(p.soundFilename)}\n"} else {""} +
+            if (p.subtitle != "") {"subtitle : ${yamlDoubleQuoted(p.subtitle)}\n"} else {""} +
             if (p.titleZPercent != 0f) {"titleZ : ${p.titleZPercent}\n"} else {""} +
             if (p.subtitleZPercent != 0f) {"subtitleZ : ${p.subtitleZPercent}\n"} else {""} +
             p.titleStyle.toYamlBlock("titleStyle", TextStyleConfig.TITLE_DEFAULT) +
             p.subtitleStyle.toYamlBlock("subtitleStyle", TextStyleConfig.SUBTITLE_DEFAULT) +
             if (!p.isAutomated) {"isAutomated : false\n"} else {""} +
             if (p.scrollSpeedLimitPercent != 5f) {"scrollSpeedLimitPercent : ${p.scrollSpeedLimitPercent}\n"} else {""} +
-            if (p.soundtrack.isNotEmpty()) {"soundtrack :\n" + p.soundtrack.joinToString("") { "- \"$it\"\n" }} else {""} +
+            if (p.soundtrack.isNotEmpty()) {"soundtrack :\n" + p.soundtrack.joinToString("") { "- ${yamlDoubleQuoted(it)}\n" }} else {""} +
             if (p.credits != "") {"credits : ${yamlDoubleQuoted(p.credits)}\n"} else {""} +
             if (p.creditsZPercent != 0f) {"creditsZ : ${p.creditsZPercent}\n"} else {""} +
             p.creditsStyle.toYamlBlock("creditsStyle", TextStyleConfig.CREDITS_DEFAULT) +
             if (p.creditsPlacement != CreditsPlacement.END_SLIDE) {"creditsPlacement : \"${p.creditsPlacement.name}\"\n"} else {""} +
             if (p.photos.isNotEmpty()) {"photos :\n"} else {""}
-    val items = p.photos.map {"- filename : \"${it.filename}\"\n" + // WARNING 1+ space after ":" is important
-            "  comment : \"${it.comment}\"\n" +
-            if (it.commentColor != "") {"  commentAnchor : \"${it.commentAnchor}\"\n"} else {""} +
-            if (it.commentColor != "") {"  commentColor : \"${it.commentColor}\"\n"} else {""} +
+    val items = p.photos.map {"- filename : ${yamlDoubleQuoted(it.filename)}\n" + // WARNING 1+ space after ":" is important
+            "  comment : ${yamlDoubleQuoted(it.comment)}\n" +
+            if (it.commentAnchor != "") {"  commentAnchor : ${yamlDoubleQuoted(it.commentAnchor)}\n"} else {""} +
+            if (it.commentColor != "") {"  commentColor : ${yamlDoubleQuoted(it.commentColor)}\n"} else {""} +
             if (it.commentZPercent != 0f) {"  commentZ : ${it.commentZPercent}\n"} else {""} +
             if (it.durationS != -1) {"  duration : ${it.durationS}\n"} else {""} + // WARNING { } are important. Otherwise do not go to next line
-            if (it.transition != "") {"  transition : \"${it.transition}\"\n"} else {""} +
+            if (it.transition != "") {"  transition : ${yamlDoubleQuoted(it.transition)}\n"} else {""} +
             if (it.isHalfWidth) {"  isHalfWidth : true\n"} else {""} +
             if (it.isVideo) {"  isVideo : true\n"} else {""} +
             if (it.isMuted) {"  isMuted : true\n"} else {""} +
