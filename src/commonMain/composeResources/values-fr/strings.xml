@@ -303,4 +303,8 @@
     <string name="playlist_index_dismiss">Ignorer</string>
     <string name="playlist_index_restored">Diaporama restauré</string>
     <string name="playlist_index_restore_failed">L'index n'a pas pu être restauré</string>
+    <!-- v1.4.0 -->
+    <string name="whats_new_v140_item_1">Envoyer un avis ou signaler un bug au développeur</string>
+    <string name="whats_new_v140_item_2">Les photos et diaporamas supprimés vont dans la Corbeille</string>
+    <string name="whats_new_v140_item_3">Corrections de bugs et petites améliorations</string>
 </resources>

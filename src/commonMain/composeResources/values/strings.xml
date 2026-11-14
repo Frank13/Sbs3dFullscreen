@@ -303,4 +303,8 @@
     <string name="playlist_index_dismiss">Dismiss</string>
     <string name="playlist_index_restored">Playlist restored</string>
     <string name="playlist_index_restore_failed">The index couldn't be restored</string>
+    <!-- v1.4.0 -->
+    <string name="whats_new_v140_item_1">Send feedback or report a bug to the developer</string>
+    <string name="whats_new_v140_item_2">Deleted photos and playlists go to the Recycle Bin</string>
+    <string name="whats_new_v140_item_3">Bug fixes and small improvements</string>
 </resources>
