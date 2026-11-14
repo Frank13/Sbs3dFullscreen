@@ -66,6 +66,12 @@ object Analytics {
 
     private val clientId: String by lazy { ClientIdPreference.loadOrCreate() }
 
+    // Dev runs (./gradlew run) aren't launched by a jpackage launcher, so this property is unset -
+    // same check CrashReporting uses for Sentry's environment. Their events get GA4's debug_mode
+    // param, which routes them to DebugView and lets the "Developer traffic" data filter drop them
+    // from the real reports.
+    private val isDevBuild = System.getProperty("jpackage.app-path") == null
+
     var consentGranted: Boolean = AnalyticsConsentPreference.isGranted()
         private set
 
@@ -79,7 +85,8 @@ object Analytics {
 
     fun logEvent(name: String, params: Map<String, Any?> = emptyMap()) {
         if (!consentGranted || !isConfigured) return
-        val eventParams = params + mapOf("session_id" to sessionId, "engagement_time_msec" to "100")
+        val eventParams = params + mapOf("session_id" to sessionId, "engagement_time_msec" to "100") +
+            (if (isDevBuild) mapOf("debug_mode" to 1) else emptyMap())
         val body = mapOf(
             "client_id" to clientId,
             "events" to listOf(mapOf("name" to name, "params" to eventParams)),
