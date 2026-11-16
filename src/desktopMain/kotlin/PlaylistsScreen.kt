@@ -17,9 +17,13 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -46,6 +50,12 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import sbs3dViewer.resources.Res
 import sbs3dViewer.resources.cancel_button
+import sbs3dViewer.resources.choose_playlist_button
+import sbs3dViewer.resources.import_playlist_already_exists
+import sbs3dViewer.resources.import_playlist_read_failed_text
+import sbs3dViewer.resources.import_playlist_read_failed_title
+import sbs3dViewer.resources.ok_button
+import sbs3dViewer.resources.playlist_dialog_title
 import sbs3dViewer.resources.create_playlist_button
 import sbs3dViewer.resources.create_playlist_confirm
 import sbs3dViewer.resources.create_playlist_dialog_title
@@ -58,6 +68,7 @@ import sbs3dViewer.resources.playlist_name_label
 import sbs3dViewer.resources.playlist_play_button
 import sbs3dViewer.resources.vlc_missing_cannot_play_toast
 import java.io.File
+import javax.swing.JFileChooser
 
 /**
  * Lists the playlist folders found under playlistsRoot: tapping a row's name opens it in the
@@ -68,6 +79,7 @@ import java.io.File
  */
 @Composable
 fun PlaylistsScreen(
+    window: java.awt.Window,
     playlists: List<Playlist>,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
@@ -75,6 +87,7 @@ fun PlaylistsScreen(
     onPlayPlaylist: (Playlist) -> Boolean,
     onCreatePlaylist: (String) -> Unit,
     canCreatePlaylist: (String) -> Boolean,
+    onImportPlaylist: suspend (File) -> ImportPlaylistResult,
     // Hoisted by Main.kt so the scroll position survives opening/playing a playlist and coming back.
     listState: LazyListState = rememberLazyListState(),
     // True while the first scan of the playlists folder runs in the background - see PlaylistEditorState.isLoadingList.
@@ -92,6 +105,9 @@ fun PlaylistsScreen(
     }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    val importDialogTitle = stringResource(Res.string.playlist_dialog_title)
+    var importErrorFolderName by remember { mutableStateOf<String?>(null) }
+    var importReadFailedFolderName by remember { mutableStateOf<String?>(null) }
 
     ScreenWith3dotMenuAndSnackbar(
         screenTitle = stringResource(Res.string.playlist_list_title),
@@ -115,14 +131,45 @@ fun PlaylistsScreen(
         },
         bottomBar = {},
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    newPlaylistName = ""
-                    showCreatePlaylistDialog = true
-                },
-                shape = CircleShape,
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(Res.string.create_playlist_button))
+            var showAddMenu by remember { mutableStateOf(false) }
+            Box {
+                FloatingActionButton(onClick = { showAddMenu = true }, shape = CircleShape) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(Res.string.create_playlist_button))
+                }
+                DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.create_playlist_button)) },
+                        leadingIcon = { Icon(Icons.Filled.CreateNewFolder, contentDescription = null) },
+                        onClick = {
+                            showAddMenu = false
+                            newPlaylistName = ""
+                            showCreatePlaylistDialog = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.choose_playlist_button)) },
+                        leadingIcon = { Icon(Icons.Filled.FolderOpen, contentDescription = null) },
+                        onClick = {
+                            showAddMenu = false
+                            val chooser = newFileChooser()
+                            chooser.dialogTitle = importDialogTitle
+                            chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                            if (chooser.showOpenDialog(window) == JFileChooser.APPROVE_OPTION) {
+                                chooser.selectedFile?.let { folder ->
+                                    // Suspends while the folder is copied in the background (see
+                                    // PlaylistEditorState.isCopying / Main.kt's CopyingFilesOverlay).
+                                    scope.launch {
+                                        when (onImportPlaylist(folder)) {
+                                            ImportPlaylistResult.IMPORTED -> {}
+                                            ImportPlaylistResult.ALREADY_EXISTS -> importErrorFolderName = folder.name
+                                            ImportPlaylistResult.READ_FAILED -> importReadFailedFolderName = folder.name
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
             }
         },
         snackbarHostState = snackbarHostState,
@@ -193,6 +240,32 @@ fun PlaylistsScreen(
             dismissButton = {
                 TextButton(onClick = { showCreatePlaylistDialog = false }) {
                     Text(stringResource(Res.string.cancel_button))
+                }
+            },
+        )
+    }
+
+    importErrorFolderName?.let { folderName ->
+        AlertDialog(
+            onDismissRequest = { importErrorFolderName = null },
+            title = { Text(stringResource(Res.string.import_playlist_already_exists, folderName)) },
+            text = {},
+            confirmButton = {
+                TextButton(onClick = { importErrorFolderName = null }) {
+                    Text(stringResource(Res.string.ok_button))
+                }
+            },
+        )
+    }
+
+    importReadFailedFolderName?.let { folderName ->
+        AlertDialog(
+            onDismissRequest = { importReadFailedFolderName = null },
+            title = { Text(stringResource(Res.string.import_playlist_read_failed_title, folderName)) },
+            text = { Text(stringResource(Res.string.import_playlist_read_failed_text)) },
+            confirmButton = {
+                TextButton(onClick = { importReadFailedFolderName = null }) {
+                    Text(stringResource(Res.string.ok_button))
                 }
             },
         )

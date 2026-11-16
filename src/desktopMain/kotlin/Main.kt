@@ -551,9 +551,6 @@ private fun runApp(args: Array<String>) = application {
                                         onFilesChosen = { files ->
                                             if (viewModel.onFilesChosen(files)) enterFullscreen()
                                         },
-                                        onImportPlaylist = { folder ->
-                                            viewModel.importPlaylistFolder(folder)
-                                        },
                                         onOpenPlaylistList = { viewModel.openPlaylistList() },
                                         onOpenGallery = { folder -> viewModel.openGallery(folder) },
                                         onOpenAbout = { viewModel.openAbout() },
@@ -597,6 +594,10 @@ private fun runApp(args: Array<String>) = application {
                                     }
 
                                     Screen.PlaylistList -> PlaylistsScreen(
+                                        window = window,
+                                        onImportPlaylist = { folder ->
+                                            viewModel.importPlaylistFolder(folder)
+                                        },
                                         playlists = viewModel.playlistEditor.all,
                                         onBack = { viewModel.closePlaylistList() },
                                         onRefresh = { viewModel.refreshPlaylistList() },
