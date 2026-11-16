@@ -75,9 +75,31 @@ fun newFileChooser(directory: File? = null): JFileChooser = JFileChooser(directo
  * with every remaining shell call falling back to a plain java.io answer on InternalError.
  * Being a non-default view also makes Swing's FilePane/combo box skip their own ShellFolder use.
  * Trade-off: Windows .lnk shortcuts show as plain files instead of navigable folders.
+ *
+ * Navigation also stays on plain java.io folders: the shell's single root is the virtual
+ * "Desktop" namespace, and since a non-default view makes the "Look in" combo box list only
+ * [getRoots], delegating roots/home/parent to the shell left the user stuck on Desktop, unable to
+ * reach Pictures, OneDrive or another drive. [getRoots] therefore lists the user's real special
+ * folders (see [WindowsFolders]) followed by the drives, and the parent of a folder is just its
+ * java.io parent, up to the drive root.
  */
 private object SafeFileSystemView : FileSystemView() {
     private val shell: FileSystemView = getFileSystemView()
+
+    private val driveRoots: Array<File> get() = File.listRoots() ?: emptyArray()
+
+    private fun isDriveRoot(f: File?): Boolean =
+        f != null && driveRoots.any { it.path.equals(f.path, ignoreCase = true) }
+
+    // Computed once: the combo box re-reads it on every directory change.
+    private val shortcutRoots: List<File> by lazy {
+        with(WindowsFolders) {
+            listOf(home, desktop, documents, pictures, videos, music) + oneDrives.flatMap { oneDrive ->
+                // The OneDrive root, plus its photo folders when they're not already Pictures itself.
+                listOf(oneDrive) + listOf("Pictures", "Images").map { File(oneDrive, it) }
+            }
+        }.filter { it.isDirectory }.distinctBy { it.absolutePath.lowercase() }
+    }
 
     private inline fun <T> safe(fallback: () -> T, block: () -> T): T =
         try {
@@ -96,7 +118,7 @@ private object SafeFileSystemView : FileSystemView() {
     }
 
     override fun createNewFolder(containingDir: File?): File? = shell.createNewFolder(containingDir)
-    override fun isRoot(f: File?): Boolean = safe({ false }) { shell.isRoot(f) }
+    override fun isRoot(f: File?): Boolean = isDriveRoot(f)
     override fun isTraversable(f: File?): Boolean? = safe({ f?.isDirectory }) { shell.isTraversable(f) }
     override fun getSystemDisplayName(f: File?): String? = safe({ f?.name }) { shell.getSystemDisplayName(f) }
     override fun getSystemTypeDescription(f: File?): String? = safe({ null }) { shell.getSystemTypeDescription(f) }
@@ -111,33 +133,34 @@ private object SafeFileSystemView : FileSystemView() {
     override fun isComputerNode(dir: File?): Boolean = safe({ false }) { shell.isComputerNode(dir) }
     override fun isLink(file: File?): Boolean = safe({ false }) { shell.isLink(file) }
     override fun getLinkLocation(file: File?): File? = safe({ null }) { shell.getLinkLocation(file) }
-    override fun getRoots(): Array<File> = safe({ File.listRoots() }) { shell.roots }
-    override fun getHomeDirectory(): File = safe({ File(System.getProperty("user.home")) }) { shell.homeDirectory }
-    override fun getDefaultDirectory(): File = safe({ File(System.getProperty("user.home")) }) { shell.defaultDirectory }
+    override fun getRoots(): Array<File> = (shortcutRoots + driveRoots).toTypedArray()
+    override fun getHomeDirectory(): File = WindowsFolders.home
+    override fun getDefaultDirectory(): File = WindowsFolders.pictures
     override fun createFileObject(dir: File?, filename: String?): File = safe({ File(dir, filename) }) { shell.createFileObject(dir, filename) }
     override fun createFileObject(path: String?): File = safe({ File(path) }) { shell.createFileObject(path) }
-    override fun getParentDirectory(dir: File?): File? = safe({ dir?.parentFile }) { shell.getParentDirectory(dir) }
+    override fun getParentDirectory(dir: File?): File? =
+        if (dir == null || isDriveRoot(dir)) null else File(dir.absolutePath).parentFile
 }
 
 private val lastFilesDirectory = LastDirectoryPreference("lastDirectory")
 private val lastGalleryDirectory = LastDirectoryPreference("lastGalleryDirectory")
-private val lastMusicDirectory = LastDirectoryPreference("lastMusicDirectory", defaultFolderName = "Music")
+private val lastMusicDirectory = LastDirectoryPreference("lastMusicDirectory", defaultFolder = { WindowsFolders.music })
 
 /**
- * Remembers the last folder browsed under a given [key], defaulting to the user's Pictures folder
- * on first launch. Falls back gracefully (Pictures, then home) if a remembered folder no longer
- * exists - e.g. it was since deleted or was on a removable/network drive that isn't mounted.
+ * Remembers the last folder browsed under a given [key], defaulting to the user's (possibly
+ * OneDrive-redirected) Pictures folder on first launch. Falls back gracefully (default folder,
+ * then home) if a remembered folder no longer exists - e.g. it was since deleted or was on a
+ * removable/network drive that isn't mounted.
  */
-private class LastDirectoryPreference(private val key: String, private val defaultFolderName: String = "Pictures") {
+private class LastDirectoryPreference(private val key: String, private val defaultFolder: () -> File = { WindowsFolders.pictures }) {
     private val prefs = Preferences.userNodeForPackage(LastDirectoryPreference::class.java)
 
     /** The remembered folder, or null if none was ever saved or it no longer exists. */
     fun getSaved(): File? = prefs.get(key, null)?.let(::File)?.takeIf { it.isDirectory }
 
     fun getOrDefault(): File {
-        val pictures = File(System.getProperty("user.home"), defaultFolderName)
-        val home = File(System.getProperty("user.home"))
-        return getSaved() ?: sequenceOf(pictures, home).firstOrNull { it.isDirectory } ?: home
+        val home = WindowsFolders.home
+        return getSaved() ?: sequenceOf(defaultFolder(), home).firstOrNull { it.isDirectory } ?: home
     }
 
     fun save(directory: File?) {

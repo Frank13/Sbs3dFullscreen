@@ -1,6 +1,3 @@
-import com.sun.jna.Native
-import com.sun.jna.Pointer
-import com.sun.jna.win32.StdCallLibrary
 import java.io.File
 
 /**
@@ -16,13 +13,6 @@ object DesktopShortcut {
     // Must match the Application Id in packaging/msix/AppxManifest.xml.
     private const val ApplicationId = "sbs3Dfullscreen"
     private const val ShortcutName = "SBS 3D Viewer"
-    private const val CSIDL_DESKTOPDIRECTORY = 0x0010
-    private const val MAX_PATH = 260
-
-    private interface Shell32 : StdCallLibrary {
-        fun SHGetFolderPathW(hwnd: Pointer?, csidl: Int, hToken: Pointer?, dwFlags: Int, pszPath: CharArray): Int
-    }
-
     private val exePath: String? = ProcessHandle.current().info().command().orElse(null)
 
     private val packageFamilyName: String? by lazy {
@@ -36,20 +26,8 @@ object DesktopShortcut {
         if (name.isNullOrBlank() || publisherId.isNullOrBlank()) null else "${name}_$publisherId"
     }
 
-    // Asked from the shell rather than assumed to be ~/Desktop: OneDrive backup (on by default on
-    // many Windows 11 setups) redirects it to ~/OneDrive/Desktop.
-    private val shortcutFile: File by lazy {
-        val desktop = try {
-            val buffer = CharArray(MAX_PATH)
-            val shell32 = Native.load("shell32", Shell32::class.java)
-            if (shell32.SHGetFolderPathW(null, CSIDL_DESKTOPDIRECTORY, null, 0, buffer) == 0) {
-                File(Native.toString(buffer))
-            } else null
-        } catch (_: Throwable) {
-            null
-        } ?: File(System.getProperty("user.home"), "Desktop")
-        File(desktop, "$ShortcutName.lnk")
-    }
+    // Not assumed to be ~/Desktop: OneDrive backup can redirect it, see WindowsFolders.
+    private val shortcutFile: File by lazy { File(WindowsFolders.desktop, "$ShortcutName.lnk") }
 
     /** Only true when running inside the MSIX package, the sole case where the shortcut is needed. */
     val isAvailable: Boolean get() = packageFamilyName != null
