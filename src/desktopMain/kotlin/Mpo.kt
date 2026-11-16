@@ -104,7 +104,16 @@ object Mpo {
      */
     fun decodeComposedImage(file: File): BufferedImage? {
         if (!isMpoFile(file)) return null
-        val frames = runCatching { splitFrames(file.readBytes()) }.getOrNull() ?: return null
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        return decodeComposedImage(bytes)
+    }
+
+    /**
+     * Same as the [File] overload, for bytes the caller already read - so it can tell a failed
+     * read (e.g. an offline OneDrive file, see ImageDecodeCache) from an undecodable file.
+     */
+    fun decodeComposedImage(bytes: ByteArray): BufferedImage? {
+        val frames = runCatching { splitFrames(bytes) }.getOrNull() ?: return null
         if (frames.size < 2) return null
         val left = ImageIO.read(frames[0].inputStream()) ?: return null
         val right = ImageIO.read(frames[1].inputStream()) ?: return null

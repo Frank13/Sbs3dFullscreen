@@ -44,7 +44,13 @@ object ImageDecodeCache {
 
     sealed interface Result {
         data class Loaded(val bitmap: ImageBitmap) : Result
+        /** Read or decoded, but not an image (0-byte, corrupt, ...) - or a non-cloud read error. */
         data object Failed : Result
+        /**
+         * A cloud placeholder (see [CloudFiles]) whose download failed - OneDrive not running, no
+         * network, timeout. Transient: ImageScreen retries until it loads.
+         */
+        data object CloudUnavailable : Result
     }
 
     // Extensions ImageDecodeCache actually knows how to decode - matches ImageScreen's own
@@ -82,7 +88,11 @@ object ImageDecodeCache {
         get(key)?.let { return it }
         val deferred = inFlight.getOrPut(key) { scope.async { decode(file) } }
         return deferred.await().also {
-            put(key, it)
+            // Only successes are cached: a failure may be transient (OneDrive not running yet,
+            // file locked, ...) and must be retried on the next visit rather than stick until the
+            // app restarts - a download doesn't change lastModified, so the key wouldn't change
+            // either. Re-reading a really corrupt file on each visit is cheap.
+            if (it is Result.Loaded) put(key, it)
             inFlight.remove(key, deferred)
         }
     }
@@ -94,14 +104,27 @@ object ImageDecodeCache {
         scope.launch { load(file) }
     }
 
-    private fun decode(file: File): Result = runCatching {
-        // .mpo's two stereo frames are composed purely in memory (see Mpo.kt's doc comment) - just
-        // viewing one never writes a converted copy to disk, only an actual edit "Save" does.
-        val bitmap = if (Mpo.isMpoFile(file)) {
-            Mpo.decodeComposedImage(file)?.toComposeImageBitmap()
-        } else {
-            file.readBytes().decodeToImageBitmap()
+    private fun decode(file: File): Result {
+        // Read separately from the decode, so a failed read of a cloud placeholder (attributes
+        // checked after the failure: a placeholder that couldn't be downloaded stays one) is
+        // reported as transient rather than as a corrupt file.
+        val bytes = try {
+            file.readBytes()
+        } catch (e: Exception) {
+            return if (CloudFiles.isNotDownloaded(file)) Result.CloudUnavailable else Result.Failed
+        } catch (e: OutOfMemoryError) {
+            return Result.Failed
         }
-        bitmap?.let { Result.Loaded(it) } ?: Result.Failed
-    }.getOrElse { Result.Failed }
+        return runCatching {
+            // .mpo's two stereo frames are composed purely in memory (see Mpo.kt's doc comment) -
+            // just viewing one never writes a converted copy to disk, only an actual edit "Save" does.
+            val bitmap = if (Mpo.isMpoFile(file)) {
+                Mpo.decodeComposedImage(bytes)?.toComposeImageBitmap()
+            } else {
+                // decodeToImageBitmap throws on an empty buffer: same Failed result as a corrupt one.
+                bytes.decodeToImageBitmap()
+            }
+            bitmap?.let { Result.Loaded(it) } ?: Result.Failed
+        }.getOrElse { Result.Failed }
+    }
 }

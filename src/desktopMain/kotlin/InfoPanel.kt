@@ -105,6 +105,8 @@ import sbs3dViewer.resources.save_finished_exif_lost
 import sbs3dViewer.resources.save_finished_failed
 import sbs3dViewer.resources.photo_read_failed
 import sbs3dViewer.resources.image_decode_failed_message
+import sbs3dViewer.resources.photo_downloading_from_onedrive
+import sbs3dViewer.resources.photo_waiting_for_onedrive
 import sbs3dViewer.resources.video_playback_failed_message
 import sbs3dViewer.resources.photo_metadata_read_failed
 import sbs3dViewer.resources.exif_update_failed
@@ -1233,6 +1235,33 @@ fun DecodeFailedToast(visible: Boolean, shiftPercent: Float = InfoPanelShiftPerc
         Text(
             stringResource(Res.string.image_decode_failed_message),
             color = WarningColor,
+            fontSize = 18.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** Where ImageScreen is with an online-only OneDrive photo (see its cloudState). */
+enum class CloudPhotoState { NONE, DOWNLOADING, WAITING }
+
+/** How often ImageScreen retries reading a photo while [CloudPhotoState.WAITING] for OneDrive. */
+const val CloudRetryDelayMillis = 3_000L
+
+/**
+ * ImageScreen's online-only OneDrive photo messages, stays up for the whole state: white while
+ * [CloudPhotoState.DOWNLOADING], [WarningColor] while [CloudPhotoState.WAITING] for OneDrive to
+ * be started / the connection to come back (retried automatically, see [CloudRetryDelayMillis]).
+ */
+@Composable
+fun CloudPhotoToast(state: CloudPhotoState, shiftPercent: Float = InfoPanelShiftPercent) {
+    // Remembers the last non-NONE state so the text doesn't blank out during StereoToastBox's fade-out.
+    var shownState by remember { mutableStateOf(CloudPhotoState.DOWNLOADING) }
+    if (state != CloudPhotoState.NONE) shownState = state
+    StereoToastBox(state != CloudPhotoState.NONE, shiftPercent) {
+        val waiting = shownState == CloudPhotoState.WAITING
+        Text(
+            stringResource(if (waiting) Res.string.photo_waiting_for_onedrive else Res.string.photo_downloading_from_onedrive),
+            color = if (waiting) WarningColor else Color.White,
             fontSize = 18.sp,
             textAlign = TextAlign.Center,
         )

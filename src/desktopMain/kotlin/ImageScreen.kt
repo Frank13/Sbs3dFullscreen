@@ -211,16 +211,40 @@ fun ImageScreen(
     // arbitrary file via Windows' file association could otherwise trigger. See
     // ImageDecodeCache.Result.Failed.
     var decodeFailed by remember(file) { mutableStateOf(false) }
+    // Online-only OneDrive file (see CloudFiles): DOWNLOADING while the first read blocks on the
+    // download, WAITING once it failed (OneDrive not running, offline, timeout) - then retried
+    // every CloudRetryDelayMillis for as long as this photo is shown, so it opens by itself as
+    // soon as OneDrive is back, without the user having to navigate away and back.
+    var cloudState by remember(file) { mutableStateOf(CloudPhotoState.NONE) }
     LaunchedEffect(file) {
         decodeFailed = false
-        when (val result = ImageDecodeCache.load(file)) {
-            is ImageDecodeCache.Result.Loaded -> fileBitmap = result.bitmap
-            ImageDecodeCache.Result.Failed -> decodeFailed = true
+        if (ImageDecodeCache.peek(file) == null && withContext(Dispatchers.IO) { CloudFiles.isNotDownloaded(file) }) {
+            cloudState = CloudPhotoState.DOWNLOADING
+        }
+        while (true) {
+            when (val result = ImageDecodeCache.load(file)) {
+                is ImageDecodeCache.Result.Loaded -> {
+                    fileBitmap = result.bitmap
+                    cloudState = CloudPhotoState.NONE
+                    break
+                }
+                ImageDecodeCache.Result.Failed -> {
+                    decodeFailed = true
+                    cloudState = CloudPhotoState.NONE
+                    break
+                }
+                ImageDecodeCache.Result.CloudUnavailable -> {
+                    cloudState = CloudPhotoState.WAITING
+                    delay(CloudRetryDelayMillis)
+                }
+            }
         }
     }
     val imageBitmap = overrideBitmap ?: fileBitmap
-    LaunchedEffect(fileBitmap, decodeFailed) {
-        if (fileBitmap != null || decodeFailed) onImageLoaded()
+    LaunchedEffect(fileBitmap, decodeFailed, cloudState) {
+        // A pending OneDrive download/wait also ends the fullscreen loading overlay, so its 3D
+        // toast is visible instead of an endless spinner.
+        if (fileBitmap != null || decodeFailed || cloudState != CloudPhotoState.NONE) onImageLoaded()
     }
 
     // Bumped (never reset) whenever a freshly-loaded JPEG's color profile across its vertical
@@ -573,13 +597,14 @@ fun ImageScreen(
                             hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
                             copyFromImageMode = copyMode,
                             hasCopyPainting = hasCopyPainting,
-                            photoUnreadable = decodeFailed && imageBitmap == null,
+                            photoUnreadable = (decodeFailed || cloudState != CloudPhotoState.NONE) && imageBitmap == null,
                         ),
                         actions = photoToolActions,
                         showEditTools = showEditTools,
                     )
                 }
                 DecodeFailedToast(visible = decodeFailed && imageBitmap == null)
+                CloudPhotoToast(if (imageBitmap == null) cloudState else CloudPhotoState.NONE)
                 ExifUpdatedToast(exifUpdateToken)
                 ExifUpdateFailedToast(exifUpdateFailedToken)
                 AlignResultToast(alignToast)

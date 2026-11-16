@@ -168,6 +168,8 @@
     <string name="share_failed_toast">Impossible d'ouvrir votre programme de messagerie</string>
     <string name="image_likely_not_3d_toast">Cette image ne semble pas être une photo 3D côte à côte</string>
     <string name="image_decode_failed_message">Impossible d'ouvrir cette photo — elle est peut-être vide, corrompue, n'est pas une image valide ou n'est pas téléchargée (OneDrive)</string>
+    <string name="photo_downloading_from_onedrive">Téléchargement de cette photo depuis OneDrive…</string>
+    <string name="photo_waiting_for_onedrive">Cette photo n'est pas encore téléchargée et OneDrive est inaccessible. Lancez OneDrive ou vérifiez votre connexion : la photo s'ouvrira automatiquement.</string>
     <string name="discard_button">Ignorer</string>
     <string name="unsaved_align_changes_dialog_title">Modifications non enregistrées</string>
     <string name="unsaved_align_changes_dialog_message">Vous avez un alignement ou une correction de zoom non enregistré(e). L'enregistrer avant de continuer ?</string>

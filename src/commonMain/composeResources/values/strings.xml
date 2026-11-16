@@ -168,6 +168,8 @@
     <string name="share_failed_toast">Couldn't open your email program</string>
     <string name="image_likely_not_3d_toast">This image doesn't look like a side-by-side 3D photo</string>
     <string name="image_decode_failed_message">Couldn't open this photo — it may be empty, corrupted, not a valid image file or not downloaded (OneDrive)</string>
+    <string name="photo_downloading_from_onedrive">Downloading this photo from OneDrive…</string>
+    <string name="photo_waiting_for_onedrive">This photo isn't downloaded yet and OneDrive can't be reached. Start OneDrive or check your connection — the photo will open automatically.</string>
     <string name="discard_button">Discard</string>
     <string name="unsaved_align_changes_dialog_title">Unsaved changes</string>
     <string name="unsaved_align_changes_dialog_message">You have an unsaved alignment/zoom correction. Save it before continuing?</string>
