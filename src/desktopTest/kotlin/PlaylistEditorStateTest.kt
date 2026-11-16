@@ -45,9 +45,9 @@ class PlaylistEditorStateTest {
         val newFolder = File(root, "RenamedList")
         assertEquals(newFolder.absolutePath, playlist.absolutePath)
         assertFalse(File(root, "MyList").exists())
-        for (photo in playlist.photos) {
-            val file = playlistItemFile(photo.imageUriString)
-            assertTrue(file.exists(), "${photo.filename} should resolve to an existing file after the rename")
+        for ((filename, imageUriString) in playlist.photos) {
+            val file = playlistItemFile(imageUriString)
+            assertTrue(file.exists(), "$filename should resolve to an existing file after the rename")
             assertEquals(newFolder.canonicalFile, file.parentFile.canonicalFile)
         }
     }
@@ -77,6 +77,26 @@ class PlaylistEditorStateTest {
 
         assertNull(editor.importFolder(external))
         assertFalse(editor.isCopying)
+    }
+
+    @Test
+    fun `importing a folder without an index writes one and notifies, but not when it already had one`() = runBlocking<Unit> {
+        val plain = File(sources, "Plain").apply { mkdirs() }
+        realJpeg(plain, "1.jpg")
+        val editor = PlaylistEditorState(rootOverride = root)
+
+        assertNotNull(editor.importFolder(plain))
+        val index = File(root, "Plain/playlistIndex.yaml")
+        assertTrue(index.exists(), "the index must be written at import time")
+        assertEquals(listOf("1.jpg"), Playlist.loadPlaylist(DesktopPlaylistStorage(root), "Plain").photos.map { it.filename })
+        assertNotNull(editor.indexCreatedNotice)
+        editor.consumeIndexCreatedNotice()
+
+        val withIndex = File(sources, "WithIndex").apply { mkdirs() }
+        realJpeg(withIndex, "1.jpg")
+        index.copyTo(File(withIndex, "playlistIndex.yaml"))
+        assertNotNull(editor.importFolder(withIndex))
+        assertNull(editor.indexCreatedNotice)
     }
 
     @Test

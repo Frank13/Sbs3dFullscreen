@@ -302,6 +302,7 @@
     <string name="playlist_index_open_folder">Ouvrir le dossier</string>
     <string name="playlist_index_dismiss">Ignorer</string>
     <string name="playlist_index_restored">Diaporama restauré</string>
+    <string name="playlist_index_created">Ce dossier n'avait pas d'index de diaporama : un index a été créé à partir de ses photos</string>
     <string name="playlist_index_restore_failed">L'index n'a pas pu être restauré</string>
     <!-- v1.4.0 -->
     <string name="whats_new_v140_item_1">Envoyer un avis ou signaler un bug au développeur</string>

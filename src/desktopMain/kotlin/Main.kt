@@ -662,6 +662,8 @@ private fun runApp(args: Array<String>) = application {
                                             onDismissIndexRecovery = viewModel.playlistEditor::dismissIndexRecovery,
                                             writeError = viewModel.playlistEditor.writeError,
                                             onWriteErrorShown = viewModel.playlistEditor::consumeWriteError,
+                                            indexCreatedNotice = viewModel.playlistEditor.indexCreatedNotice,
+                                            onIndexCreatedNoticeShown = viewModel.playlistEditor::consumeIndexCreatedNotice,
                                         )
                                     }
 

@@ -302,6 +302,7 @@
     <string name="playlist_index_open_folder">Open folder</string>
     <string name="playlist_index_dismiss">Dismiss</string>
     <string name="playlist_index_restored">Playlist restored</string>
+    <string name="playlist_index_created">This folder had no playlist index: one has been created from its photos</string>
     <string name="playlist_index_restore_failed">The index couldn't be restored</string>
     <!-- v1.4.0 -->
     <string name="whats_new_v140_item_1">Send feedback or report a bug to the developer</string>

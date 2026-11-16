@@ -105,6 +105,19 @@ class PlaylistEditorState(
         writeError = null
     }
 
+    /**
+     * Set (to a fresh token) when [importFolder] found no playlistIndex.yaml in the imported folder and
+     * wrote one built from its photos - shown once as a snackbar by PlaylistScreen, then
+     * [consumeIndexCreatedNotice]d.
+     */
+    var indexCreatedNotice by mutableStateOf<Int?>(null)
+        private set
+    private var indexCreatedCounter = 0
+
+    fun consumeIndexCreatedNotice() {
+        indexCreatedNotice = null
+    }
+
     /** Runs [block] on the UI (AWT event) thread, after every UI update posted before it. */
     private fun onUi(block: () -> Unit) = SwingUtilities.invokeLater(block)
 
@@ -339,6 +352,11 @@ class PlaylistEditorState(
      * (e.g. an online-only OneDrive file while OneDrive isn't running: "The cloud file provider is
      * not running"), after deleting the partially-copied destination so a retry isn't blocked by
      * the "already exists" check and no half-imported playlist shows up in the list.
+     *
+     * A folder without a playlistIndex.yaml (a plain folder of JPEGs) gets one written right away,
+     * built from its photos, and [indexCreatedNotice] tells the user so. If that write fails (e.g.
+     * OneDrive offline), the import still succeeds without the notice: the index is then written on
+     * the first edit, as before.
      */
     suspend fun importFolder(folder: File): Playlist? {
         // Sanitized like startCreate's dirName, so an imported folder can never end up with a
@@ -346,7 +364,7 @@ class PlaylistEditorState(
         // display name would get - otherwise the two could coexist as distinct directories that
         // both normalize to the same Playlist.getDirName(), which broke the PlaylistList's
         // LazyColumn item keys (duplicate key crash).
-        val playlist = copying {
+        val (playlist, indexCreated) = copying {
             val destination = File(playlistsRoot, sanitizedDirName(folder.name))
             if (destination.exists()) return@copying null
             playlistsRoot.mkdirs()
@@ -356,10 +374,20 @@ class PlaylistEditorState(
                 destination.deleteRecursively()
                 throw e
             }
-            load(playlistsRoot, destination.name)
+            val storage = DesktopPlaylistStorage(playlistsRoot)
+            val hadIndex = storage.indexFileExists(destination.name)
+            val loaded = load(playlistsRoot, destination.name)
+            val indexCreated = !hadIndex && try {
+                loaded.save(storage)
+                true
+            } catch (e: IOException) {
+                false
+            }
+            loaded to indexCreated
         } ?: return null
         beginEditing(playlist)
-        Analytics.logEvent("playlist_created", mapOf("source" to "import"))
+        if (indexCreated) indexCreatedNotice = ++indexCreatedCounter
+        Analytics.logEvent("playlist_created", mapOf("source" to "import", "index_created" to indexCreated.toString()))
         return playlist
     }
 

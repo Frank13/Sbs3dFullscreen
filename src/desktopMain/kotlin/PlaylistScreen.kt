@@ -136,6 +136,9 @@ fun PlaylistScreen(
     // A failed background write of this playlist - see PlaylistEditorState.writeError.
     writeError: PlaylistEditorState.WriteError? = null,
     onWriteErrorShown: () -> Unit = {},
+    // Non-null right after importing a folder that had no index - see PlaylistEditorState.indexCreatedNotice.
+    indexCreatedNotice: Int? = null,
+    onIndexCreatedNoticeShown: () -> Unit = {},
     // Hoisted by Main.kt so the scroll position survives opening a playlist item and coming back.
     lazyListState: LazyListState = rememberLazyListState(),
 ) {
@@ -145,6 +148,7 @@ fun PlaylistScreen(
     val indexRestoredToast = stringResource(Res.string.playlist_index_restored)
     val indexRestoreFailedToast = stringResource(Res.string.playlist_index_restore_failed)
     PlaylistWriteErrorSnackbar(writeError, onWriteErrorShown, snackbarHostState)
+    PlaylistIndexCreatedSnackbar(indexCreatedNotice, onIndexCreatedNoticeShown, snackbarHostState)
 
     val strings = PlaylistScreenStrings(
         ok = stringResource(Res.string.ok_button),
@@ -548,6 +552,27 @@ internal fun PlaylistWriteErrorSnackbar(
         snapshotFlow { latestError }.filterNotNull().collect { error ->
             latestOnShown()
             snackbarHostState.showSnackbar(getString(Res.string.playlist_error_while_saving, error.message))
+        }
+    }
+}
+
+/**
+ * Tells the user, once, that the folder they just imported had no playlistIndex.yaml and that one was
+ * created from its photos - see PlaylistEditorState.indexCreatedNotice. Same one-long-lived-effect
+ * pattern as [PlaylistWriteErrorSnackbar], for the same reason.
+ */
+@Composable
+private fun PlaylistIndexCreatedSnackbar(
+    notice: Int?,
+    onShown: () -> Unit,
+    snackbarHostState: SnackbarHostState,
+) {
+    val latestNotice by rememberUpdatedState(notice)
+    val latestOnShown by rememberUpdatedState(onShown)
+    LaunchedEffect(snackbarHostState) {
+        snapshotFlow { latestNotice }.filterNotNull().collect {
+            latestOnShown()
+            snackbarHostState.showSnackbar(getString(Res.string.playlist_index_created))
         }
     }
 }
