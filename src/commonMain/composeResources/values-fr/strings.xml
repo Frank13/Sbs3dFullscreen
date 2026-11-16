@@ -310,4 +310,8 @@
     <string name="whats_new_v140_item_1">Envoyer un avis ou signaler un bug au développeur</string>
     <string name="whats_new_v140_item_2">Les photos et diaporamas supprimés vont dans la Corbeille</string>
     <string name="whats_new_v140_item_3">Corrections de bugs et petites améliorations</string>
+    <!-- v1.4.1 -->
+    <string name="whats_new_v141_item_1">Les photos stockées uniquement sur OneDrive s'ouvrent automatiquement</string>
+    <string name="whats_new_v141_item_2">Correction : le sélecteur de fichiers accède à Images, OneDrive et aux disques</string>
+    <string name="whats_new_v141_item_3">Corrections de bugs et petites améliorations</string>
 </resources>
