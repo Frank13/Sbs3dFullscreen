@@ -334,7 +334,7 @@ private fun runApp(args: Array<String>) = application {
                 }
 
                 LaunchedEffect(viewModel.screen) {
-                    Analytics.logEvent("screen_view", mapOf("screen_name" to viewModel.screen.name))
+                    Analytics.logEvent("screen_view", mapOf("screen_name" to viewModel.analyticsScreenName))
                 }
 
                 LaunchedEffect(viewModel.alignToast) {

@@ -352,6 +352,24 @@ class AppViewModel(initialFile: File?) {
         return true
     }
 
+    /**
+     * The `screen_name` sent with Analytics' `screen_view` event: [screen]'s name, refined where one
+     * [Screen] serves several distinct flows (a playlist slideshow vs. browsing photos, Gallery
+     * browsing vs. picking photos for a playlist). Read when [screen] changes - every caller sets
+     * [playingPlaylist]/[gallery] state before switching [screen], so this is already up to date then.
+     */
+    val analyticsScreenName: String
+        get() = when (screen) {
+            Screen.ImageView -> when {
+                playingPlaylist != null -> if (isAutomatedPlaylist) "PlaylistSlideshowAuto" else "PlaylistSlideshow"
+                gallery.enteredFromGallery -> "ImageViewFromGallery"
+                else -> "ImageView"
+            }
+            Screen.VideoView -> if (gallery.enteredFromGallery) "VideoViewFromGallery" else "VideoView"
+            Screen.Gallery -> if (gallery.pickerMode) "GalleryPicker" else "Gallery"
+            else -> screen.name
+        }
+
     /** Recursively scans [folder] for images and switches to the Gallery screen. */
     fun openGallery(folder: File) {
         gallery.open(folder)

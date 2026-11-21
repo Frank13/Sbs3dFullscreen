@@ -16,6 +16,10 @@ plugins {
     kotlin("multiplatform") version "2.4.21"
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.21"
     id("org.jetbrains.compose") version "1.12.2"
+    // Compose 1.12.2 auto-applies Hot Reload 1.2.0, which triggers two Gradle 9.9 deprecation
+    // warnings (Configuration.setVisible + HotReloadUsageType attribute). 1.3.0 fixes both; switch
+    // to the 1.3.0 stable when it ships, and drop this line when a Compose release bundles it.
+    id("org.jetbrains.compose.hot-reload") version "1.3.0-rc01"
 }
 
 group = "fr.camera3d"
