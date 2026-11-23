@@ -169,6 +169,11 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
     // Set by setFrameListener's display callback - see onError.
     @Volatile private var hasDisplayedFrame = false
 
+    // Only a player rendering video (setFrameListener called) can tell "ended before any frame" from a
+    // normal end: an audio-only player (the playlist soundtrack) never displays a frame, so for it every
+    // normal end would otherwise be misreported as an error.
+    @Volatile private var rendersVideo = false
+
     // JNA only keeps a weak reference to callbacks: hold them here so they aren't collected while
     // libVLC may still call them.
     private var lockCallback: VlcLockCallback? = null
@@ -182,7 +187,7 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
                 EventMediaPlayerPositionChanged -> onPositionChanged?.invoke(event.getFloat(EventUnionOffset))
                 EventMediaPlayerEncounteredError -> onError?.invoke()
                 EventMediaPlayerEndReached -> {
-                    if (!hasDisplayedFrame) {
+                    if (rendersVideo && !hasDisplayedFrame) {
                         onError?.invoke()
                         return
                     }
@@ -255,6 +260,7 @@ class VlcPlayer internal constructor(private val lib: LibVlc, private val instan
         unlockCallback = unlock
         displayCallback = display
         cleanupCallback = cleanup
+        rendersVideo = true
         lib.libvlc_video_set_callbacks(handle, lock, unlock, display, null)
         lib.libvlc_video_set_format_callbacks(handle, format, cleanup)
     }

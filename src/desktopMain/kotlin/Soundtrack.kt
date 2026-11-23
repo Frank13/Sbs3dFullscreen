@@ -73,6 +73,9 @@ class SoundtrackPlayer(private val tracks: List<File>, private var audioOutputDe
             if (audioOutputDeviceId.isNotEmpty()) newPlayer.setOutputDevice("mmdevice", audioOutputDeviceId)
             // Called on a libVLC thread, which must not call back into the player: bounce to the worker.
             newPlayer.onFinished = { Vlc.worker.execute { if (!released) playNextTrack(newPlayer) } }
+            // An unplayable track (corrupt, 0-byte, online-only OneDrive file) is skipped rather than
+            // ending the whole soundtrack.
+            newPlayer.onError = { Vlc.worker.execute { if (!released) playNextTrack(newPlayer) } }
             player = newPlayer
         }
     }.getOrNull()
