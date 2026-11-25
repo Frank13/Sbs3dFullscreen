@@ -69,7 +69,11 @@ $filesToSync = @(
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\PortableSlideshowSlides.kt"; SourceSet = "commonMain" }
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\PortableFullscreenScroll.kt"; SourceSet = "commonMain" }
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\StyledPositionedText.kt"; SourceSet = "commonMain" }
-    @{ Path = "fr\camera3d\camera\feature_playlists\ui\ComposableTextStyleEditor.kt"; SourceSet = "commonMain" }
+    # TEMPORARY HOLD (2026-11-25): Android now uses androidx Material3 1.5.0's SliderState(value, steps,
+    # valueRange) constructor, which only exists on desktop in org.jetbrains.compose.material3 1.13.x -
+    # and that needs Compose Multiplatform 1.13, not yet released as stable. Remove the Hold once
+    # build.gradle.kts is on Compose Multiplatform 1.13.0 + Material3 1.13.0.
+    @{ Path = "fr\camera3d\camera\feature_playlists\ui\ComposableTextStyleEditor.kt"; SourceSet = "commonMain"; Hold = "needs Compose Multiplatform 1.13 stable (Material3 SliderState API)" }
     @{ Path = "fr\camera3d\camera\feature_playlists\ui\PortableCreditsRoll.kt"; SourceSet = "commonMain" }
 )
 
@@ -176,7 +180,7 @@ foreach ($coord in $jacksonCoords) {
 # --- OpenCV version check ---
 # Android declares a real Maven version; desktop vendors a local jar (no Maven coordinate to
 # read), so this compares Android's declared version against the vendored jar's filename, which
-# encodes the version by OpenCV's own convention (5.0.0 -> opencv-500.jar - see libs/opencv/README.md).
+# encodes the version by OpenCV's own convention (5.1.0 -> opencv-510.jar - see libs/opencv/README.md).
 function Get-AndroidOpenCvVersion([string]$buildFilePath) {
     if (-not (Test-Path $buildFilePath)) { return $null }
     $content = Get-Content -Path $buildFilePath -Raw
@@ -296,6 +300,11 @@ foreach ($entry in $filesToSync) {
 
     if (-not (Test-Path $sourcePath)) {
         Write-Warning "Skipping missing source file: $sourcePath"
+        continue
+    }
+
+    if ($entry.Hold) {
+        Write-Warning "NOT synced (on hold) $($entry.Path): $($entry.Hold)"
         continue
     }
 

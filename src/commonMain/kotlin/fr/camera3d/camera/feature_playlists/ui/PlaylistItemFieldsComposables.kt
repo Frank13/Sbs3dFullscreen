@@ -77,6 +77,8 @@ fun ComposableItemComment(comment: String, isVideo: Boolean = false, onModifyCom
         saveLabel = strings.saveButton,
         cancelLabel = strings.cancel,
         onDialogSave = { newComment -> onModifyComment(newComment) },
+        multiLine = true,
+        copyToClipboardLabel = strings.copyCommentToClipboard,
     )
 }
 

@@ -1,18 +1,18 @@
 # Vendored OpenCV 5 (Windows)
 
-`org.opencv:opencv:5.0.0.1` (what CameraSync3D, the companion Android app, uses) is published as
+`org.opencv:opencv:5.1.0` (what CameraSync3D, the companion Android app, uses) is published as
 an Android AAR only — there's no desktop-JVM artifact for it on Maven Central. To get real OpenCV 5
 on this desktop app, download the official Windows build directly from opencv.org and vendor two
 files here manually (this folder is gitignored-safe to keep local-only if you'd rather not commit
 binaries — up to you):
 
-1. Download the OpenCV **5.0.0** Windows release from https://opencv.org/releases/ (look for
-   `opencv-5.0.0-windows.exe`, a self-extracting archive — no install, just extraction).
+1. Download the OpenCV **5.1.0** Windows release from https://opencv.org/releases/ (look for
+   `opencv-5.1.0-windows.exe`, a self-extracting archive — no install, just extraction).
 2. Extract it, then copy:
-   - `opencv\build\java\opencv-500.jar` → `libs/opencv/opencv-500.jar`
-   - `opencv\build\java\x64\opencv_java500.dll` → `libs/opencv/opencv_java500.dll`
+   - `opencv\build\java\opencv-510.jar` → `libs/opencv/opencv-510.jar`
+   - `opencv\build\java\x64\opencv_java510.dll` → `libs/opencv/opencv_java510.dll`
 
-   The exact filenames depend on how OpenCV's build encodes the version (5.0.0 → `500` by their
+   The exact filenames depend on how OpenCV's build encodes the version (5.1.0 → `510` by their
    usual convention) — check what's actually inside the extracted `java/` folder and adjust
    `build.gradle.kts`'s `opencvJar` path if it differs.
 3. Re-run Gradle (`./gradlew.bat build`) — `build.gradle.kts` picks up the jar automatically once

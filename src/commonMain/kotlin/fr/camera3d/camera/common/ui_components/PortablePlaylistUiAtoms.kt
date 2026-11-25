@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +51,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -216,6 +221,9 @@ fun PortableOkCancelDialog(
  * @param onValidate : called with the trimmed new value before onDialogSave; return a non-null error message to keep the dialog open and display it under the field, or null to proceed
  * @param onDialogSave : callback when parameter value is changed in the dialog. Return true to close the dialog (default), false to keep it open (e.g. the save failed)
  * @param onNoChange : called instead of onValidate/onDialogSave when the trimmed value equals the current parameterValue
+ * @param multiLine : when true, the dialog's text field spans the dialog's full width and is 2 lines tall (e.g. a photo comment)
+ * @param copyToClipboardLabel : when non-null, shows a checkbox (ticked by default) with this label below the text field; if
+ * still ticked when the dialog is saved, the trimmed value is copied to the system clipboard
  */
 @Composable
 fun EditParameterComposable(
@@ -235,8 +243,22 @@ fun EditParameterComposable(
     onValidate: (String) -> String? = { null },
     onNoChange: () -> Unit = {},
     onDialogSave: (String) -> Boolean = { true },
+    multiLine: Boolean = false,
+    copyToClipboardLabel: String? = null,
 ) {
     var openDialog by remember { mutableStateOf(false) }
+    var copyToClipboard by remember { mutableStateOf(true) }
+    val clipboardManager = LocalClipboardManager.current
+    val copyToClipboardIfRequested: (String) -> Unit = { text ->
+        if (copyToClipboardLabel != null && copyToClipboard && text.isNotEmpty()) {
+            // The platform clipboard can be unavailable/locked by another app (desktop AWT throws
+            // IllegalStateException then) - never let that crash the dialog's Save button.
+            try {
+                clipboardManager.setText(AnnotatedString(text))
+            } catch (_: Exception) {
+            }
+        }
+    }
     var textFieldValue by remember { mutableStateOf(parameterValue) }
     var openDocumentationDialog by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
@@ -274,17 +296,34 @@ fun EditParameterComposable(
                 dialogOkLabel = saveLabel,
                 dialogCancelLabel = cancelLabel,
                 content = {
-                    TextField(
-                        value = textFieldValue,
-                        suffix = { Text(suffix) },
-                        keyboardOptions = dialogKeyboardOption,
-                        onValueChange = {
-                            textFieldValue = it
-                            validationError = null
-                        },
-                        isError = validationError != null,
-                        supportingText = validationError?.let { errorMessage -> { Text(errorMessage) } },
-                    )
+                    Column {
+                        TextField(
+                            value = textFieldValue,
+                            suffix = { Text(suffix) },
+                            keyboardOptions = dialogKeyboardOption,
+                            onValueChange = {
+                                textFieldValue = it
+                                validationError = null
+                            },
+                            isError = validationError != null,
+                            supportingText = validationError?.let { errorMessage -> { Text(errorMessage) } },
+                            singleLine = false,
+                            minLines = if (multiLine) 2 else 1,
+                            maxLines = if (multiLine) 2 else Int.MAX_VALUE,
+                            modifier = if (multiLine) Modifier.fillMaxWidth() else Modifier,
+                        )
+                        if (copyToClipboardLabel != null) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(value = copyToClipboard, role = Role.Checkbox, onValueChange = { copyToClipboard = it }),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = copyToClipboard, onCheckedChange = null)
+                                Text(copyToClipboardLabel, modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+                    }
                 },
                 onDismissRequestCb = {
                     openDialog = false
@@ -298,10 +337,12 @@ fun EditParameterComposable(
                         if (error != null) {
                             validationError = error
                         } else if (onDialogSave(newParameter)) {
+                            copyToClipboardIfRequested(newParameter)
                             openDialog = false
                         }
                     } else {
                         onNoChange()
+                        copyToClipboardIfRequested(newParameter)
                         openDialog = false
                     }
                 },

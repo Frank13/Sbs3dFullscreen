@@ -12,6 +12,7 @@ data class PlaylistItemScreenStrings(
     val cancel: String,
     val comment: String,
     val editComment: String,
+    val copyCommentToClipboard: String,
     val pressHereToSetAComment: String,
     val pressHereToSetAVideoComment: String,
     val zAltitudePercent: String,

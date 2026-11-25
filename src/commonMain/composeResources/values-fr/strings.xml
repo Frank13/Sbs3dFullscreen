@@ -92,6 +92,7 @@
     <string name="playlist_item_comment_placeholder">Appuyez ici pour mettre un commentaire à la photo</string>
     <string name="playlist_item_comment_placeholder_video">Appuyez ici pour mettre un commentaire à la vidéo</string>
     <string name="playlist_item_edit_comment_dialog_title">Modifier le commentaire de la photo</string>
+    <string name="playlist_item_copy_comment_to_clipboard">Copier le texte dans le presse-papiers</string>
     <string name="playlist_item_z_label">Effet de profondeur</string>
     <string name="playlist_item_z_documentation">Décalage de profondeur du commentaire en % de la largeur de l'écran : une valeur positive éloigne le commentaire derrière l'écran, une valeur négative le fait ressortir vers le spectateur. Valeur typique entre -3% et 3%</string>
     <string name="playlist_item_edit_z_dialog_title">Modifier l'effet de profondeur</string>
@@ -187,6 +188,7 @@
     <string name="gallery_warning_content_description">Cette photo a un problème de stéréo 3D</string>
     <string name="dialog_title_warning">Attention</string>
     <string name="enter_the_picture_legend">Saisir la légende de la photo</string>
+    <string name="legend_copy_to_clipboard">Copier le texte dans le presse-papiers</string>
     <string name="stereo_issue_warning_comment_title">Description du problème 3D</string>
     <string name="stereo_issue_warning_comment_hint">Décrivez le problème 3D…</string>
     <string name="stereo_issue_warning_comment_will_be_erased">La description du problème 3D sera effacée. Continuer ?</string>

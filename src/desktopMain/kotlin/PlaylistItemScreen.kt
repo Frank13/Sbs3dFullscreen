@@ -61,6 +61,7 @@ fun PlaylistItemScreen(
         cancel = stringResource(Res.string.cancel_button),
         comment = stringResource(Res.string.playlist_item_comment),
         editComment = stringResource(Res.string.playlist_item_edit_comment_dialog_title),
+        copyCommentToClipboard = stringResource(Res.string.playlist_item_copy_comment_to_clipboard),
         pressHereToSetAComment = stringResource(Res.string.playlist_item_comment_placeholder),
         pressHereToSetAVideoComment = stringResource(Res.string.playlist_item_comment_placeholder_video),
         zAltitudePercent = stringResource(Res.string.playlist_item_z_label),

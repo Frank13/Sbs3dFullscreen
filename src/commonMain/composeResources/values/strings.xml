@@ -92,6 +92,7 @@
     <string name="playlist_item_comment_placeholder">Press here to set a photo comment</string>
     <string name="playlist_item_comment_placeholder_video">Press here to set a video comment</string>
     <string name="playlist_item_edit_comment_dialog_title">Edit picture comment</string>
+    <string name="playlist_item_copy_comment_to_clipboard">Copy the text to the clipboard</string>
     <string name="playlist_item_z_label">Depth effect</string>
     <string name="playlist_item_z_documentation">Comment depth shift in % of screen width: positive values push the comment farther behind the screen, negative values bring it out toward the viewer. Typical value between -3% and 3%</string>
     <string name="playlist_item_edit_z_dialog_title">Edit depth effect</string>
@@ -187,6 +188,7 @@
     <string name="gallery_warning_content_description">This photo has a 3D stereo issue</string>
     <string name="dialog_title_warning">Warning</string>
     <string name="enter_the_picture_legend">Enter the picture legend</string>
+    <string name="legend_copy_to_clipboard">Copy the text to the clipboard</string>
     <string name="stereo_issue_warning_comment_title">3D Issue Comment</string>
     <string name="stereo_issue_warning_comment_hint">Describe the 3D issue…</string>
     <string name="stereo_issue_warning_comment_will_be_erased">The 3D issue comment will be erased. Continue?</string>

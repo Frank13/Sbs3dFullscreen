@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -27,6 +31,8 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -101,6 +107,7 @@ import sbs3dViewer.resources.delete_raw_dialog_message
 import sbs3dViewer.resources.delete_raw_dialog_title
 import sbs3dViewer.resources.dialog_title_warning
 import sbs3dViewer.resources.enter_the_picture_legend
+import sbs3dViewer.resources.legend_copy_to_clipboard
 import sbs3dViewer.resources.save_finished_exif_lost
 import sbs3dViewer.resources.save_finished_failed
 import sbs3dViewer.resources.photo_read_failed
@@ -463,7 +470,7 @@ private fun StereoIssueCommentDialog(shrinkControls: Boolean, initialComment: St
                     value = fieldValue,
                     onValueChange = { fieldValue = it },
                     caretVisible = caretVisible,
-                    modifier = Modifier.focusRequester(focusRequester),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                     textStyle = LocalTextStyle.current.copy(color = Color.Black, fontSize = ShrunkControlsFontSize),
                     placeholder = {
                         Text(stringResource(Res.string.stereo_issue_warning_comment_hint), color = Color.Black.copy(alpha = 0.6f), fontSize = ShrunkControlsFontSize)
@@ -482,7 +489,7 @@ private fun StereoIssueCommentDialog(shrinkControls: Boolean, initialComment: St
                         value = fieldValue,
                         onValueChange = { fieldValue = it },
                         placeholder = { Text(stringResource(Res.string.stereo_issue_warning_comment_hint)) },
-                        modifier = Modifier.focusRequester(focusRequester),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                         colors = TextFieldDefaults.colors(
                             focusedTextColor = Color.Black,
                             unfocusedTextColor = Color.Black,
@@ -505,9 +512,21 @@ private fun StereoIssueCommentDialog(shrinkControls: Boolean, initialComment: St
     )
 }
 
+/** Copies [text] to the system clipboard; never throws (the clipboard can be locked by another app). */
+private fun copyTextToClipboard(text: String) {
+    try {
+        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+    } catch (_: Exception) {
+        // IllegalStateException when another app holds the clipboard - not worth crashing the dialog.
+    }
+}
+
 @Composable
 private fun LegendTextDialog(shrinkControls: Boolean, initialText: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var fieldValue by remember(initialText) { mutableStateOf(TextFieldValue(initialText)) }
+    // Hoisted outside the text() slot (like fieldValue/caretVisible) so both stereo halves show the
+    // same checkbox state. Ticked by default, every time the dialog opens.
+    var copyToClipboard by remember { mutableStateOf(true) }
     // See StereoIssueCommentDialog's matching comment.
     var caretVisible by remember { mutableStateOf(true) }
     LaunchedEffect(shrinkControls) {
@@ -525,27 +544,59 @@ private fun LegendTextDialog(shrinkControls: Boolean, initialText: String, onDis
             // See StereoIssueCommentDialog's matching comment.
             val focusRequester = remember { FocusRequester() }
             LaunchedEffect(Unit) { focusRequester.requestFocus() }
-            if (shrinkControls) {
-                StereoBlinkingCaretTextField(
-                    value = fieldValue,
-                    onValueChange = { fieldValue = it },
-                    caretVisible = caretVisible,
-                    modifier = Modifier.focusRequester(focusRequester),
-                    textStyle = LocalTextStyle.current.copy(color = Color.Black, fontSize = ShrunkControlsFontSize),
-                )
-            } else {
-                CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current.copy(color = Color.Black)) {
-                    TextField(
+            val fontSize = if (shrinkControls) ShrunkControlsFontSize else TextUnit.Unspecified
+            Column(Modifier.fillMaxWidth()) {
+                if (shrinkControls) {
+                    StereoBlinkingCaretTextField(
                         value = fieldValue,
                         onValueChange = { fieldValue = it },
-                        modifier = Modifier.focusRequester(focusRequester),
-                        colors = TextFieldDefaults.colors(focusedTextColor = Color.Black, unfocusedTextColor = Color.Black),
+                        caretVisible = caretVisible,
+                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                        textStyle = LocalTextStyle.current.copy(color = Color.Black, fontSize = ShrunkControlsFontSize),
+                        minLines = 2,
+                    )
+                } else {
+                    CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current.copy(color = Color.Black)) {
+                        TextField(
+                            value = fieldValue,
+                            onValueChange = { fieldValue = it },
+                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                            minLines = 2,
+                            maxLines = 2,
+                            colors = TextFieldDefaults.colors(focusedTextColor = Color.Black, unfocusedTextColor = Color.Black),
+                        )
+                    }
+                }
+                val toggleCopy = { copyToClipboard = !copyToClipboard }
+                Row(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                        // Native path (plain AlertDialog window, "shrink controls" off) ...
+                        .toggleable(value = copyToClipboard, role = Role.Checkbox, onValueChange = { copyToClipboard = it })
+                        // ... and the 3D-cursor path (Stereo3DCursorHost consumes the native one).
+                        .cursor3DClickTarget(toggleCopy),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = copyToClipboard,
+                        onCheckedChange = null,
+                        colors = if (shrinkControls) CheckboxDefaults.colors(uncheckedColor = Color.White) else CheckboxDefaults.colors(),
+                    )
+                    Text(
+                        stringResource(Res.string.legend_copy_to_clipboard),
+                        modifier = Modifier.padding(start = 8.dp),
+                        fontSize = fontSize,
                     )
                 }
             }
         },
         confirmButton = {
-            val onClick = { onConfirm(fieldValue.text.trim()) }
+            val onClick = {
+                val text = fieldValue.text.trim()
+                if (copyToClipboard && text.isNotEmpty()) copyTextToClipboard(text)
+                onConfirm(text)
+            }
             val buttonFontSize = if (shrinkControls) ShrunkControlsFontSize else TextUnit.Unspecified
             TextButton(onClick = onClick, modifier = Modifier.cursor3DClickTarget(onClick)) { Text(stringResource(Res.string.ok_button), fontSize = buttonFontSize) }
         },

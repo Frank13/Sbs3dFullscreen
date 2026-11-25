@@ -211,6 +211,9 @@ fun StereoBlinkingCaretTextField(
     textStyle: TextStyle = LocalTextStyle.current,
     caretColor: Color = Color.Black,
     placeholder: @Composable (() -> Unit)? = null,
+    // Only a minimum, no maxLines cap: a capped BasicTextField scrolls its text internally, and the
+    // hand-drawn caret below is positioned from the unscrolled TextLayoutResult, so it would drift.
+    minLines: Int = 1,
 ) {
     var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     val density = LocalDensity.current
@@ -221,6 +224,7 @@ fun StereoBlinkingCaretTextField(
         onValueChange = onValueChange,
         modifier = modifier,
         textStyle = textStyle,
+        minLines = minLines,
         cursorBrush = SolidColor(Color.Transparent),
         onTextLayout = { layoutResult = it },
         decorationBox = { innerTextField ->

@@ -39,7 +39,7 @@ kotlin {
     jvm("desktop")
 
     sourceSets {
-        val opencvJarExists = file("libs/opencv/opencv-500.jar").exists()
+        val opencvJarExists = file("libs/opencv/opencv-510.jar").exists()
         val commonMain = getByName("commonMain") {
             dependencies {
                 implementation("org.jetbrains.compose.runtime:runtime:1.12.2")
@@ -51,8 +51,8 @@ kotlin {
                 implementation("org.jetbrains.compose.components:components-resources:1.12.2")
                 // Jackson: same coordinates/version as CameraSync3D (the companion Android app) so the
                 // EXIF3D (Desc3d) and playlist YAML formats stay wire-compatible between the two apps.
-                implementation("tools.jackson.module:jackson-module-kotlin:3.2.4")
-                implementation("tools.jackson.dataformat:jackson-dataformat-yaml:3.2.4")
+                implementation("tools.jackson.module:jackson-module-kotlin:3.3.0")
+                implementation("tools.jackson.dataformat:jackson-dataformat-yaml:3.3.0")
                 // Same coordinates as CameraSync3D's app/build.gradle, so the shared playlist item
                 // Composable (synced from Android) can use coil3.compose.SubcomposeAsyncImage identically
                 // on both platforms.
@@ -60,14 +60,14 @@ kotlin {
                 // Same coordinates as CameraSync3D's app/build.gradle, for drag-to-reorder in the shared
                 // playlist item list.
                 implementation("sh.calvin.reorderable:reorderable:3.1.0")
-                // Real OpenCV 5 (matching CameraSync3D's org.opencv:opencv:5.0.0.1) isn't on Maven
+                // Real OpenCV 5 (matching CameraSync3D's org.opencv:opencv:5.1.0) isn't on Maven
                 // Central for desktop JVM (only as an Android AAR) - vendor the official Windows
                 // build's Java jar locally instead. See libs/opencv/README.md. Declared in commonMain
                 // (not desktopMain) so AutoAlignCore.kt - grouped here with the rest of the files
                 // synced from CameraSync3D rather than split by which platform types they happen to
                 // need - can compile; this project has only one real target (desktop) today, so
                 // there's no other-target purity being traded away yet.
-                val opencvJar = file("libs/opencv/opencv-500.jar")
+                val opencvJar = file("libs/opencv/opencv-510.jar")
                 if (opencvJar.exists()) {
                     implementation(files(opencvJar))
                 }
