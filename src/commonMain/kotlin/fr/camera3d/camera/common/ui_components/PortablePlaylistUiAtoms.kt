@@ -46,17 +46,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
 
 /**
  * Widget describing a parameter with its name, its value, and its documentation.
@@ -248,14 +249,20 @@ fun EditParameterComposable(
 ) {
     var openDialog by remember { mutableStateOf(false) }
     var copyToClipboard by remember { mutableStateOf(true) }
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     val copyToClipboardIfRequested: (String) -> Unit = { text ->
         if (copyToClipboardLabel != null && copyToClipboard && text.isNotEmpty()) {
-            // The platform clipboard can be unavailable/locked by another app (desktop AWT throws
-            // IllegalStateException then) - never let that crash the dialog's Save button.
-            try {
-                clipboardManager.setText(AnnotatedString(text))
-            } catch (_: Exception) {
+            // plainTextClipEntry() is NOT part of this shared file: building a plain-text ClipEntry
+            // is platform-specific (ClipData on Android, StringSelection on desktop), so each app
+            // defines it in its own non-synced PlainTextClipEntry.kt, in this same package.
+            clipboardScope.launch {
+                // The platform clipboard can be unavailable/locked by another app (desktop AWT throws
+                // IllegalStateException then) - never let that crash the dialog's Save button.
+                try {
+                    clipboard.setClipEntry(plainTextClipEntry(text))
+                } catch (_: Exception) {
+                }
             }
         }
     }
