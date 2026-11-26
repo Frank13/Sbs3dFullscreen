@@ -337,6 +337,20 @@ private fun runApp(args: Array<String>) = application {
                     Analytics.logEvent("screen_view", mapOf("screen_name" to viewModel.analyticsScreenName))
                 }
 
+                // Connected-monitor polling (see ScreenWatcher's doc for why polling). Restarted with
+                // each Window recreation, but the watcher itself lives in the view model, so a
+                // recreation never makes the already-plugged screens read as newly connected.
+                LaunchedEffect(Unit) {
+                    var hwnd = ScreenManager.windowHandle(window)
+                    while (true) {
+                        if (hwnd == null) hwnd = ScreenManager.windowHandle(window)
+                        val handle = hwnd
+                        val result = withContext(Dispatchers.IO) { viewModel.screenWatcher.poll(handle) }
+                        viewModel.screenWatcher.apply(result)
+                        delay(2000.milliseconds)
+                    }
+                }
+
                 LaunchedEffect(viewModel.alignToast) {
                     viewModel.alignToast?.let { toast ->
                         if (!toast.success) Analytics.logEvent("app_error", mapOf("type" to "align"))
@@ -548,6 +562,9 @@ private fun runApp(args: Array<String>) = application {
                                         onHalveLeftRightImagesChosen = viewModel::onHalveLeftRightImagesChosen,
                                         shrinkControls = viewModel.shrinkControls,
                                         onShrinkControlsChosen = viewModel::onShrinkControlsChosen,
+                                        screens = viewModel.screenWatcher.screens,
+                                        screenMode = viewModel.screenWatcher.mode,
+                                        currentScreenGdiDeviceName = viewModel.screenWatcher.currentGdiDeviceName,
                                         onFilesChosen = { files ->
                                             if (viewModel.onFilesChosen(files)) enterFullscreen()
                                         },
@@ -874,6 +891,17 @@ private fun runApp(args: Array<String>) = application {
 
                                 if (isEnteringFullscreen && inViewer) {
                                     FullscreenLoadingOverlay()
+                                }
+
+                                // "New screen connected" toast: 3D in the viewers, 2D elsewhere. Only
+                                // a fresh plug event is shown, so switching screens (which recomposes
+                                // the toast from scratch) doesn't re-flash an old one.
+                                val newScreenEvent = viewModel.screenWatcher.newlyConnected
+                                    ?.takeIf { System.currentTimeMillis() - it.atMs < 3000 }
+                                if (inViewer) {
+                                    ScreenConnectedStereoToast(newScreenEvent)
+                                } else {
+                                    ScreenConnectedToast(newScreenEvent)
                                 }
 
                                 if (viewModel.playlistEditor.isCopying) {

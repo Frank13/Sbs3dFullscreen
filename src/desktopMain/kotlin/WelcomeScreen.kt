@@ -84,6 +84,9 @@ fun WelcomeScreen(
     onHalveLeftRightImagesChosen: (Boolean) -> Unit,
     shrinkControls: Boolean,
     onShrinkControlsChosen: (Boolean) -> Unit,
+    screens: List<ConnectedScreen> = emptyList(),
+    screenMode: ScreenMode? = null,
+    currentScreenGdiDeviceName: String? = null,
     onFilesChosen: (List<File>) -> Unit,
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
@@ -189,6 +192,9 @@ fun WelcomeScreen(
                 onHalveLeftRightImagesChosen = onHalveLeftRightImagesChosen,
                 shrinkControls = shrinkControls,
                 onShrinkControlsChosen = onShrinkControlsChosen,
+                screens = screens,
+                screenMode = screenMode,
+                currentScreenGdiDeviceName = currentScreenGdiDeviceName,
                 onOpenAbout = {
                     showSettings = false
                     onOpenAbout()
@@ -219,7 +225,7 @@ fun WelcomeScreen(
 /**
  * Opened by the welcome screen's gear: app-wide language, OpenCV, display (halve left & right
  * images, shrink controls - same persisted AppViewModel values as ImageScreen's settings menu
- * toggles) and audio output settings.
+ * toggles), audio output settings and the list of connected screens (see ScreenWatcher).
  */
 @Composable
 private fun WelcomeSettingsDialog(
@@ -233,6 +239,9 @@ private fun WelcomeSettingsDialog(
     onHalveLeftRightImagesChosen: (Boolean) -> Unit,
     shrinkControls: Boolean,
     onShrinkControlsChosen: (Boolean) -> Unit,
+    screens: List<ConnectedScreen>,
+    screenMode: ScreenMode?,
+    currentScreenGdiDeviceName: String?,
     onOpenAbout: () -> Unit,
     onOpenFeedback: () -> Unit,
     onDismiss: () -> Unit,
@@ -298,6 +307,8 @@ private fun WelcomeSettingsDialog(
                             Text(device.longName)
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
+                    ConnectedScreensSection(screens, screenMode, currentScreenGdiDeviceName)
                     Spacer(Modifier.height(16.dp))
                     OutlinedButton(onClick = onOpenAbout) {
                         Text(stringResource(Res.string.about_link_label))

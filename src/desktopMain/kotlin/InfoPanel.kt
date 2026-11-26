@@ -1363,6 +1363,17 @@ fun ExifUpdatedToast(updateToken: Int, shiftPercent: Float = InfoPanelShiftPerce
     }
 }
 
+/**
+ * 3D counterpart of ScreensUi.kt's ScreenConnectedToast, flashed in ImageView/VideoView when a
+ * monitor is plugged in (see ScreenWatcher.newlyConnected). Hosted by Main.kt above every screen.
+ */
+@Composable
+fun ScreenConnectedStereoToast(event: ScreenWatcher.NewScreenEvent?, shiftPercent: Float = InfoPanelShiftPercent) {
+    StereoToast(trigger = event, shiftPercent = shiftPercent) {
+        event?.let { Text(screenConnectedMessage(it.screen), color = Color.White, fontSize = 18.sp) }
+    }
+}
+
 /** [ExifUpdatedToast]'s failure counterpart: an EXIF write (favorite/warning/legend) didn't reach the file. */
 @Composable
 fun ExifUpdateFailedToast(failureToken: Int, shiftPercent: Float = InfoPanelShiftPercent) {

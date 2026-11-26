@@ -201,6 +201,9 @@ class AppViewModel(initialFile: File?) {
     // The settings-menu "Share" dialog's state - see ShareState's own doc comment.
     val share = ShareState()
 
+    // Connected monitors + the one the window is on, polled from Main.kt - see ScreenWatcher's doc.
+    val screenWatcher = ScreenWatcher()
+
     // The PlaylistList/PlaylistEdit/PlaylistItem screens' state - see PlaylistEditorState's own doc comment.
     val playlistEditor = PlaylistEditorState()
 
