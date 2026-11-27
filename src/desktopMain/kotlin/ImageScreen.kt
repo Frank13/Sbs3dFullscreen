@@ -199,6 +199,12 @@ fun ImageScreen(
     onImageLoaded: () -> Unit = {},
     onRequestKeyboardFocus: () -> Unit = {},
     onDialogShownChanged: (Boolean) -> Unit = {},
+    // Reports InfoPanel's PhotoToolsUiState.photoUnreadable input, for the 2D remote control
+    // window's copy of the panel (see RemoteControlWindow.kt), which lives outside this screen.
+    onPhotoUnreadableChanged: (Boolean) -> Unit = {},
+    // False in remote-control mode: the info panel lives in the 2D remote window, so the settings
+    // menu's "Info panel" row would toggle nothing.
+    showInfoPanelItem: Boolean = true,
 ) {
     // Decoded off the UI thread (large side-by-side 3D JPEGs can take a while) through
     // ImageDecodeCache - which also prefetches Next/Previous neighbors (see Main.kt) so most
@@ -241,6 +247,8 @@ fun ImageScreen(
         }
     }
     val imageBitmap = overrideBitmap ?: fileBitmap
+    val photoUnreadable = (decodeFailed || cloudState != CloudPhotoState.NONE) && imageBitmap == null
+    LaunchedEffect(photoUnreadable) { onPhotoUnreadableChanged(photoUnreadable) }
     LaunchedEffect(fileBitmap, decodeFailed, cloudState) {
         // A pending OneDrive download/wait also ends the fullscreen loading overlay, so its 3D
         // toast is visible instead of an endless spinner.
@@ -576,6 +584,7 @@ fun ImageScreen(
                     onOpenSettings = { showSettingsDialog = true },
                     initialExpanded = initialMenuExpanded,
                     showPhotoFilters = showPhotoFilters,
+                    showInfoPanelItem = showInfoPanelItem,
                 )
                 if (showInfoPanel) {
                     InfoPanel(
@@ -597,7 +606,7 @@ fun ImageScreen(
                             hasClickAlignPoints = clickAlignLeftPoint != null && clickAlignRightPoint != null,
                             copyFromImageMode = copyMode,
                             hasCopyPainting = hasCopyPainting,
-                            photoUnreadable = (decodeFailed || cloudState != CloudPhotoState.NONE) && imageBitmap == null,
+                            photoUnreadable = photoUnreadable,
                         ),
                         actions = photoToolActions,
                         showEditTools = showEditTools,
@@ -1502,6 +1511,7 @@ private fun SettingsMenuOverlay(
     onOpenSettings: () -> Unit,
     initialExpanded: Boolean = false,
     showPhotoFilters: Boolean = true,
+    showInfoPanelItem: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(initialExpanded) }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -1509,10 +1519,10 @@ private fun SettingsMenuOverlay(
         val shift = halfWidth * SettingsMenuShiftPercent
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().weight(1f)) {
-                SettingsMenuHalf(offsetX = -shift / 2, expanded, { expanded = !expanded }, keepBestOfEachOnly, favoritesOnly, excludeStereoIssues, halveLeftRightImages, shrinkControls, onKeepBestOfEachOnlyChosen, onFavoritesOnlyChosen, onExcludeStereoIssuesChosen, onHalveLeftRightImagesChosen, onShrinkControlsChosen, onExitFullscreen, onNextImage, onPreviousImage, onToggleInfoPanel, onOpenShare, onOpenSettings, showPhotoFilters = showPhotoFilters)
+                SettingsMenuHalf(offsetX = -shift / 2, expanded, { expanded = !expanded }, keepBestOfEachOnly, favoritesOnly, excludeStereoIssues, halveLeftRightImages, shrinkControls, onKeepBestOfEachOnlyChosen, onFavoritesOnlyChosen, onExcludeStereoIssuesChosen, onHalveLeftRightImagesChosen, onShrinkControlsChosen, onExitFullscreen, onNextImage, onPreviousImage, onToggleInfoPanel, onOpenShare, onOpenSettings, showPhotoFilters = showPhotoFilters, showInfoPanelItem = showInfoPanelItem)
             }
             Box(Modifier.fillMaxSize().weight(1f)) {
-                SettingsMenuHalf(offsetX = shift / 2, expanded, { expanded = !expanded }, keepBestOfEachOnly, favoritesOnly, excludeStereoIssues, halveLeftRightImages, shrinkControls, onKeepBestOfEachOnlyChosen, onFavoritesOnlyChosen, onExcludeStereoIssuesChosen, onHalveLeftRightImagesChosen, onShrinkControlsChosen, onExitFullscreen, onNextImage, onPreviousImage, onToggleInfoPanel, onOpenShare, onOpenSettings, showPhotoFilters = showPhotoFilters)
+                SettingsMenuHalf(offsetX = shift / 2, expanded, { expanded = !expanded }, keepBestOfEachOnly, favoritesOnly, excludeStereoIssues, halveLeftRightImages, shrinkControls, onKeepBestOfEachOnlyChosen, onFavoritesOnlyChosen, onExcludeStereoIssuesChosen, onHalveLeftRightImagesChosen, onShrinkControlsChosen, onExitFullscreen, onNextImage, onPreviousImage, onToggleInfoPanel, onOpenShare, onOpenSettings, showPhotoFilters = showPhotoFilters, showInfoPanelItem = showInfoPanelItem)
             }
         }
     }
@@ -1540,6 +1550,7 @@ private fun SettingsMenuHalf(
     onOpenShare: () -> Unit,
     onOpenSettings: () -> Unit,
     showPhotoFilters: Boolean = true,
+    showInfoPanelItem: Boolean = true,
 ) {
     Box(
         modifier = Modifier.fillMaxSize().padding(start = 24.dp, top = 24.dp).offset(x = offsetX),
@@ -1575,8 +1586,10 @@ private fun SettingsMenuHalf(
                     Spacer(Modifier.height(8.dp))
                     SettingsMenuItemRow(stringResource(Res.string.image_settings_previous_label), shrinkControls) { trackMenuItem("previous"); onPreviousImage() }
                     Spacer(Modifier.height(8.dp))
-                    SettingsMenuItemRow(stringResource(Res.string.image_settings_info_panel_label), shrinkControls) { trackMenuItem("info_panel"); onToggleInfoPanel() }
-                    Spacer(Modifier.height(8.dp))
+                    if (showInfoPanelItem) {
+                        SettingsMenuItemRow(stringResource(Res.string.image_settings_info_panel_label), shrinkControls) { trackMenuItem("info_panel"); onToggleInfoPanel() }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     SettingsMenuItemRow(stringResource(Res.string.image_settings_share_label), shrinkControls) { trackMenuItem("share"); onOpenShare() }
                     Spacer(Modifier.height(8.dp))
                     SettingsMenuItemRow(stringResource(Res.string.image_settings_exit_fullscreen_label), shrinkControls) { trackMenuItem("exit_fullscreen"); onExitFullscreen() }

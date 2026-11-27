@@ -91,7 +91,12 @@ private val manualAlignStepPercentPref = FloatPref("manualAlignStepPercent", Min
  * so grouping them keeps this class down to the state genuinely shared across screens (current
  * screen/file selection, filters, per-photo edit tools, pending navigation).
  */
-class AppViewModel(initialFile: File?) {
+class AppViewModel(
+    initialFile: File?,
+    // Connected monitors + the one the window is on, polled from Main.kt - see ScreenWatcher's doc.
+    // A parameter so Main.kt can seed it at launch, before deciding where a double-clicked file opens.
+    val screenWatcher: ScreenWatcher = ScreenWatcher(),
+) {
     var screen by mutableStateOf(
         when {
             initialFile == null -> Screen.Welcome
@@ -201,8 +206,8 @@ class AppViewModel(initialFile: File?) {
     // The settings-menu "Share" dialog's state - see ShareState's own doc comment.
     val share = ShareState()
 
-    // Connected monitors + the one the window is on, polled from Main.kt - see ScreenWatcher's doc.
-    val screenWatcher = ScreenWatcher()
+    // Which display the fullscreen viewer opens on, remembered per screen set - see FullscreenDisplayState.
+    val fullscreenDisplay = FullscreenDisplayState(screenWatcher)
 
     // The PlaylistList/PlaylistEdit/PlaylistItem screens' state - see PlaylistEditorState's own doc comment.
     val playlistEditor = PlaylistEditorState()
@@ -920,7 +925,7 @@ class AppViewModel(initialFile: File?) {
      * Whether [playlist] can start: false (and logged) if it holds a video or a soundtrack while VLC
      * is missing, in which case the calling screen toasts instead of starting the slideshow.
      */
-    private fun canPlayPlaylist(playlist: Playlist): Boolean {
+    fun canPlayPlaylist(playlist: Playlist): Boolean {
         val needsVlc = playlist.soundtrack.isNotEmpty() || playlist.photos.any { it.isVideo }
         if (!needsVlc || Vlc.isInstalled()) return true
         Analytics.logEvent("app_error", mapOf("type" to "vlc_missing"))

@@ -227,6 +227,15 @@
     <string name="screens_primary">primary</string>
     <string name="screens_current">app displayed here</string>
     <string name="screens_new_screen_toast">New screen connected: %1$s (%2$d × %3$d)</string>
+    <string name="screens_fullscreen_dialog_title">Which screen should show the 3D view?</string>
+    <string name="screens_fullscreen_dialog_message">Several screens are connected. The 3D view can open in full screen on another screen; the info panel then stays on this screen, like a remote control.</string>
+    <string name="screens_fullscreen_on_screen">On %1$s</string>
+    <string name="screens_fullscreen_on_this_screen">On %1$s (this screen)</string>
+    <string name="screens_fullscreen_remember">Remember my choice for these screens (can be changed in Settings)</string>
+    <string name="screens_fullscreen_settings_title">Open the 3D view on:</string>
+    <string name="screens_fullscreen_settings_ask">Ask each time</string>
+    <string name="remote_control_window_title">SBS 3D Viewer - Remote control</string>
+    <string name="remote_control_position">%1$d / %2$d</string>
     <string name="vlc_missing_cannot_play_toast">Can't play this playlist because it needs VLC, which is not installed</string>
     <string name="vlc_missing_title">VLC is not installed</string>
     <string name="vlc_missing_message">SBS 3D Viewer needs VLC media player to play videos and music, and VLC was not found on this computer. Please install it, then try again.</string>

@@ -66,6 +66,24 @@ import sbs3dViewer.resources.screens_resolution
 import sbs3dViewer.resources.screens_settings_unavailable
 import sbs3dViewer.resources.screens_unknown_display
 import kotlin.time.Duration.Companion.milliseconds
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.filled.Monitor
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.Role
+import sbs3dViewer.resources.cancel_button
+import sbs3dViewer.resources.screens_fullscreen_dialog_message
+import sbs3dViewer.resources.screens_fullscreen_dialog_title
+import sbs3dViewer.resources.screens_fullscreen_on_screen
+import sbs3dViewer.resources.screens_fullscreen_on_this_screen
+import sbs3dViewer.resources.screens_fullscreen_remember
+import sbs3dViewer.resources.screens_fullscreen_settings_ask
+import sbs3dViewer.resources.screens_fullscreen_settings_title
 
 /** [ConnectedScreen.displayName], or a localized fallback when the monitor reports no name at all. */
 @Composable
@@ -95,7 +113,15 @@ fun screenModeLabel(mode: ScreenMode): String = stringResource(
  * resolution in physical pixels, under the current [ScreenMode], flagging the primary one and the one the app window is on.
  */
 @Composable
-fun ConnectedScreensSection(screens: List<ConnectedScreen>, mode: ScreenMode?, currentGdiDeviceName: String?) {
+fun ConnectedScreensSection(
+    screens: List<ConnectedScreen>,
+    mode: ScreenMode?,
+    currentGdiDeviceName: String?,
+    // The FullscreenDisplayState choice for this exact screen set (null = "Ask each time"), shown
+    // as a radio group only when the desktop spans 2+ distinct screens (see ScreenWatcher.needsDisplayChoice).
+    fullscreenDisplayId: String? = null,
+    onFullscreenDisplayChosen: ((String?) -> Unit)? = null,
+) {
     // The "Screens" heading itself (and the indentation) comes from the caller's SettingsSection card.
     Column {
         mode?.let {
@@ -134,7 +160,97 @@ fun ConnectedScreensSection(screens: List<ConnectedScreen>, mode: ScreenMode?, c
                 }
             }
         }
+        val desktops = screens.distinctBy { it.gdiDeviceName }
+        if (onFullscreenDisplayChosen != null && desktops.size > 1) {
+            Text(
+                stringResource(Res.string.screens_fullscreen_settings_title),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            // A remembered id that's no longer a distinct desktop reads as "Ask each time", which
+            // is what FullscreenDisplayState.decide() does with it too.
+            val selected = fullscreenDisplayId?.takeIf { id -> desktops.any { it.id == id } }
+            FullscreenDisplayRadioRow(stringResource(Res.string.screens_fullscreen_settings_ask), selected == null) {
+                onFullscreenDisplayChosen(null)
+            }
+            desktops.forEach { screen ->
+                FullscreenDisplayRadioRow(screenLabel(screen), selected == screen.id) { onFullscreenDisplayChosen(screen.id) }
+            }
+        }
     }
+}
+
+@Composable
+private fun FullscreenDisplayRadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label)
+    }
+}
+
+/**
+ * Asked (on a 2D screen) just before the fullscreen SBS viewer opens while the desktop spans
+ * 2+ distinct screens - see FullscreenDisplayState.decide(). One button per screen, the other
+ * screen(s) first as the primary choice; [onChosen] gets the screen and whether "remember" is
+ * ticked. Dismissing cancels the opening.
+ */
+@Composable
+fun FullscreenDisplayDialog(
+    screens: List<ConnectedScreen>,
+    currentGdiDeviceName: String?,
+    onChosen: (screen: ConnectedScreen, remember: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var rememberChoice by remember { mutableStateOf(false) }
+    val desktops = screens.distinctBy { it.gdiDeviceName }
+    val current = desktops.firstOrNull { it.gdiDeviceName == currentGdiDeviceName }
+    val others = desktops.filter { it != current }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Monitor, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(28.dp))
+            }
+        },
+        title = { Text(stringResource(Res.string.screens_fullscreen_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.screens_fullscreen_dialog_message))
+                Spacer(Modifier.height(4.dp))
+                others.forEach { screen ->
+                    Button(onClick = { onChosen(screen, rememberChoice) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.screens_fullscreen_on_screen, screenLabel(screen)))
+                    }
+                }
+                current?.let { screen ->
+                    OutlinedButton(onClick = { onChosen(screen, rememberChoice) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.screens_fullscreen_on_this_screen, screenLabel(screen)))
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .toggleable(value = rememberChoice, role = Role.Checkbox, onValueChange = { rememberChoice = it }),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = rememberChoice, onCheckedChange = null)
+                    Text(stringResource(Res.string.screens_fullscreen_remember), modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.cancel_button)) }
+        },
+    )
 }
 
 /**

@@ -21,6 +21,8 @@ import com.sun.jna.ptr.IntByReference
  * [nativeWidthPx]/[nativeHeightPx] are the monitor's own preferred (native, EDID) resolution, null
  * if the driver doesn't report it - they differ from [widthPx]/[heightPx] typically in "duplicate"
  * mode, where both monitors show the one shared desktop at the smaller one's resolution.
+ * [desktopX]/[desktopY] are the top-left corner of its desktop in the virtual desktop, in physical
+ * pixels (the primary monitor is at 0, 0) - see [ScreenManager.awtBoundsOf].
  */
 data class ConnectedScreen(
     val id: String,
@@ -34,6 +36,8 @@ data class ConnectedScreen(
     val nativeHeightPx: Int?,
     val isPrimary: Boolean,
     val isBuiltIn: Boolean,
+    val desktopX: Int = 0,
+    val desktopY: Int = 0,
 ) {
     /**
      * "Samsung Odyssey G70NC"-style name, or null when the monitor reports neither a model name
@@ -150,6 +154,45 @@ object ScreenManager {
         null
     }
 
+    /**
+     * The AWT bounds (Java's DPI-scaled user-space coordinates, the ones Compose's WindowState
+     * position uses) of the monitor showing [screen], or null if no AWT screen device matches it.
+     * Never throws.
+     *
+     * AWT doesn't expose the GDI device name, so the device is matched by geometry: on Windows
+     * the JDK reports each device's origin as the physical origin divided by that device's own
+     * scale, and its size likewise - multiplying back by the device transform's scale gives
+     * physical pixels comparable to [ConnectedScreen.desktopX]/[ConnectedScreen.widthPx]. Falls
+     * back to a size-only match when exactly one device has that physical size.
+     */
+    fun awtBoundsOf(screen: ConnectedScreen): java.awt.Rectangle? = try {
+        val devices = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
+        data class Candidate(val bounds: java.awt.Rectangle, val x: Int, val y: Int, val w: Int, val h: Int)
+        val candidates = devices.mapNotNull { device ->
+            runCatching {
+                val config = device.defaultConfiguration
+                val b = config.bounds
+                val sx = config.defaultTransform.scaleX
+                val sy = config.defaultTransform.scaleY
+                Candidate(
+                    bounds = b,
+                    x = Math.round(b.x * sx).toInt(),
+                    y = Math.round(b.y * sy).toInt(),
+                    w = Math.round(b.width * sx).toInt(),
+                    h = Math.round(b.height * sy).toInt(),
+                )
+            }.getOrNull()
+        }
+        fun near(a: Int, b: Int) = kotlin.math.abs(a - b) <= GeometryTolerancePx
+        val sameSize = candidates.filter { near(it.w, screen.widthPx) && near(it.h, screen.heightPx) }
+        (sameSize.firstOrNull { near(it.x, screen.desktopX) && near(it.y, screen.desktopY) }
+            ?: sameSize.singleOrNull())?.bounds
+    } catch (e: Throwable) {
+        null
+    }
+
+    private const val GeometryTolerancePx = 4
+
     private fun queryActiveScreens(): List<ConnectedScreen> {
         val api = User32DisplayConfig.INSTANCE
         val pathCount = IntByReference()
@@ -239,6 +282,8 @@ object ScreenManager {
                 isBuiltIn = outputTechnology == OutputTechnologyInternal ||
                     outputTechnology == OutputTechnologyDisplayPortEmbedded ||
                     outputTechnology == OutputTechnologyUdiEmbedded,
+                desktopX = posX,
+                desktopY = posY,
             )
         }
         return screens.distinctBy { it.id }
@@ -371,16 +416,32 @@ class ScreenWatcher {
      * The screen set (ids) the user closed the "Samsung 3D must be the only screen" warning for:
      * it stays closed while that exact set is connected and reappears when the setup changes.
      */
-    private var samsung3DWarningDismissedFor by mutableStateOf<Set<String>?>(null)
+    private var samsung3DWarningDismissedFor by mutableStateOf<String?>(null)
 
     /** The Samsung 3D monitor is active alongside other screens, and the user hasn't closed the warning. */
     val showSamsung3DNotAloneWarning: Boolean
         get() = screens.size > 1 && screens.any { it.isSamsung3D } &&
-            screens.map { it.id }.toSet() != samsung3DWarningDismissedFor
+            screenSetKey != samsung3DWarningDismissedFor
 
     fun dismissSamsung3DNotAloneWarning() {
-        samsung3DWarningDismissedFor = screens.map { it.id }.toSet()
+        samsung3DWarningDismissedFor = screenSetKey
     }
+
+    /**
+     * Identifies the exact set of connected screens (their sorted [ConnectedScreen.id]s), for
+     * settings remembered per screen setup - the Samsung warning above, and the fullscreen
+     * display choice (see FullscreenDisplayPreference).
+     */
+    val screenSetKey: String
+        get() = screens.map { it.id }.sorted().joinToString("|")
+
+    /** One screen per desktop: duplicated screens (sharing a [ConnectedScreen.gdiDeviceName]) count once. */
+    val distinctDesktopScreens: List<ConnectedScreen>
+        get() = screens.distinctBy { it.gdiDeviceName }
+
+    /** The desktop spans 2+ distinct screens ("Extend"), so the fullscreen viewer could open on another one. */
+    val needsDisplayChoice: Boolean
+        get() = distinctDesktopScreens.size > 1
 
     /** The screen(s) the window is on - several in "duplicate" mode. */
     val currentScreens: List<ConnectedScreen>

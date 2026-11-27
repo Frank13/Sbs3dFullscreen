@@ -96,6 +96,8 @@ fun WelcomeScreen(
     screens: List<ConnectedScreen> = emptyList(),
     screenMode: ScreenMode? = null,
     currentScreenGdiDeviceName: String? = null,
+    fullscreenDisplayId: String? = null,
+    onFullscreenDisplayChosen: (String?) -> Unit = {},
     onFilesChosen: (List<File>) -> Unit,
     onOpenPlaylistList: () -> Unit,
     onOpenGallery: (File) -> Unit,
@@ -204,6 +206,8 @@ fun WelcomeScreen(
                 screens = screens,
                 screenMode = screenMode,
                 currentScreenGdiDeviceName = currentScreenGdiDeviceName,
+                fullscreenDisplayId = fullscreenDisplayId,
+                onFullscreenDisplayChosen = onFullscreenDisplayChosen,
                 onOpenAbout = {
                     showSettings = false
                     onOpenAbout()
@@ -290,6 +294,8 @@ private fun WelcomeSettingsDialog(
     screens: List<ConnectedScreen>,
     screenMode: ScreenMode?,
     currentScreenGdiDeviceName: String?,
+    fullscreenDisplayId: String?,
+    onFullscreenDisplayChosen: (String?) -> Unit,
     onOpenAbout: () -> Unit,
     onOpenFeedback: () -> Unit,
     onDismiss: () -> Unit,
@@ -359,7 +365,13 @@ private fun WelcomeSettingsDialog(
                     }
                     Spacer(Modifier.height(16.dp))
                     SettingsSection(icon = Icons.Filled.Monitor, title = stringResource(Res.string.screens_settings_label)) {
-                        ConnectedScreensSection(screens, screenMode, currentScreenGdiDeviceName)
+                        ConnectedScreensSection(
+                            screens,
+                            screenMode,
+                            currentScreenGdiDeviceName,
+                            fullscreenDisplayId = fullscreenDisplayId,
+                            onFullscreenDisplayChosen = { trackMenuItem("welcome_fullscreen_display"); onFullscreenDisplayChosen(it) },
+                        )
                     }
                     Spacer(Modifier.height(16.dp))
                     OutlinedButton(onClick = onOpenAbout) {

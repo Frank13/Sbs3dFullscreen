@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -29,8 +30,10 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowExceptionHandler
 import androidx.compose.ui.window.WindowExceptionHandlerFactory
 import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import fr.camera3d.camera.feature_playlists.domain.isVideoFilename
 import fr.camera3d.camera.feature_playlists.ui.fullscreenScrollDurationMs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -45,6 +48,7 @@ import sbs3dViewer.resources.crash_loop_message
 import sbs3dViewer.resources.icon
 import sbs3dViewer.resources.playlist_add_music_dialog_title
 import sbs3dViewer.resources.playlist_add_photos_directory_dialog_title
+import sbs3dViewer.resources.remote_control_window_title
 import java.io.File
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
@@ -118,10 +122,15 @@ private fun runApp(args: Array<String>) = application {
     val initialFile = args.firstOrNull()?.let(::File)?.takeIf { it.isFile }
     // How the app was opened: the associated file's extension (jpg/jpeg/mpo), or "none" from the Start menu/shortcut.
     val appLaunchParams = mapOf("launch_file_type" to (initialFile?.extension?.lowercase() ?: "none"))
+    // A double-clicked file opens straight in the fullscreen viewer, so where it opens is decided
+    // here, before the Window exists: the screen watcher is seeded synchronously (its regular poll
+    // below needs the window), then FullscreenDisplayState decides - see LaunchPlan.
+    val launch = remember { planLaunch(initialFile) }
     val windowState = rememberWindowState(
-        placement = if (initialFile != null) WindowPlacement.Maximized else WindowPlacement.Floating
+        placement = if (launch.openViewerNow) WindowPlacement.Maximized else WindowPlacement.Floating,
+        position = launch.viewerPosition ?: WindowPosition.PlatformDefault,
     )
-    val viewModel = remember { AppViewModel(initialFile) }
+    val viewModel = remember { AppViewModel(initialFile.takeIf { launch.openViewerNow }, launch.watcher) }
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     // Mirrors Analytics.hasAnsweredConsent (backed by Preferences, not Compose state) so the
@@ -136,10 +145,17 @@ private fun runApp(args: Array<String>) = application {
     }
     // Announced once after an update, on the Welcome screen only (a launch via file association
     // goes straight to the viewer and must not be interrupted) and after the consent dialog.
+    // The fullscreen opening waiting on FullscreenDisplayDialog's answer (see requestFullscreen),
+    // null when no dialog is up. Already set at launch when a double-clicked file needs the question.
+    var pendingFullscreenOpen by remember {
+        mutableStateOf<(() -> Boolean)?>(
+            if (launch.askDisplay && initialFile != null) ({ viewModel.onFilesChosen(listOf(initialFile)) }) else null
+        )
+    }
     var whatsNewRelease by remember { mutableStateOf<WhatsNewRelease?>(null) }
     var whatsNewChecked by remember { mutableStateOf(false) }
-    LaunchedEffect(analyticsConsentAnswered, viewModel.screen) {
-        if (!whatsNewChecked && analyticsConsentAnswered && viewModel.screen == Screen.Welcome) {
+    LaunchedEffect(analyticsConsentAnswered, viewModel.screen, pendingFullscreenOpen) {
+        if (!whatsNewChecked && analyticsConsentAnswered && viewModel.screen == Screen.Welcome && pendingFullscreenOpen == null) {
             whatsNewChecked = true
             whatsNewRelease = WhatsNewTracker.releaseToShow()?.also { Analytics.logEvent("whats_new_shown") }
         }
@@ -170,7 +186,26 @@ private fun runApp(args: Array<String>) = application {
     // screen, i.e. still looking fullscreen, just with borders).
     var previousPlacement by remember { mutableStateOf(WindowPlacement.Floating) }
     var previousSize by remember { mutableStateOf(windowState.size) }
-    var previousPosition by remember { mutableStateOf(windowState.position) }
+    // A launch straight onto another screen restores onto the primary one, not where the viewer is.
+    var previousPosition by remember { mutableStateOf(launch.restorePosition ?: windowState.position) }
+
+    // Where the 2D "remote control" window goes (the app's pre-fullscreen spot, so the original
+    // display) while the viewer runs fullscreen on ANOTHER display - null otherwise. Hoisted above
+    // key(undecorated) like the fields above, so it survives the viewer Window's recreation.
+    var remoteControlBounds by remember { mutableStateOf(launch.remoteControlBounds) }
+    // ImageScreen's photoUnreadable, mirrored for the remote's copy of the info panel.
+    var photoUnreadable by remember { mutableStateOf(false) }
+    // The viewer can also be left without exitFullscreen (e.g. deleting the last photo calls
+    // AppViewModel.closeImageView directly): end remote-control mode there too, and bring the
+    // window back from the other display, or the next opening would wrongly start in remote mode.
+    LaunchedEffect(undecorated) {
+        if (!undecorated && remoteControlBounds != null) {
+            windowState.placement = previousPlacement
+            windowState.size = previousSize
+            windowState.position = previousPosition
+            remoteControlBounds = null
+        }
+    }
 
     // Toggled open/closed by ImageScreen each time Shift or Ctrl is pressed (see
     // onPreviewKeyEvent below).
@@ -265,8 +300,205 @@ private fun runApp(args: Array<String>) = application {
         windowState.position = previousPosition
         showImageInfoPanel = false
         isEnteringFullscreen = false
+        remoteControlBounds = null
         viewModel.closeImageView()
     }
+
+    // Shared by the viewer window's root Box and the remote control window (see
+    // RemoteControlWindow.kt), so the viewer shortcuts work whichever of the two has focus.
+    val handleViewerKey: (KeyEvent) -> Boolean = { event ->
+        val inViewer = viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView
+        val tools = viewModel.photoTools
+        // The active edit tool's own "discard" action, null when none is active.
+        val cancelActiveTool: (() -> Unit)? = when {
+            tools.manualAlignMode -> viewModel::cancelManualAlign
+            tools.cropMode -> viewModel::cancelCrop
+            tools.spotIssuesMode -> viewModel::cancelSpotIssues
+            tools.clickAlignMode -> viewModel::cancelClickAlign
+            tools.copyFromImageMode -> viewModel::cancelCopyFromImage
+            else -> null
+        }
+        if (imageDialogShown) {
+            // Leave every key untouched (see imageDialogShown's doc) so
+            // it reaches the in-scene dialog's own TextField/buttons
+            // instead of being swallowed as an app-wide shortcut -
+            // Escape closing the dialog, Space typing a literal space,
+            // and arrow keys moving the text caret all rely on this.
+            false
+        } else if (cancelActiveTool != null) {
+            // While an edit tool is active: Escape cancels it instead of
+            // exiting fullscreen, Shift/Ctrl still toggle the info panel,
+            // and every other key-down is swallowed so nothing else -
+            // navigation, auto-align's "A" shortcut - can mutate state out
+            // from under the pending edit. Two tool-specific exceptions:
+            // manual align's arrow keys feed the tick-loop LaunchedEffect
+            // above, and click align repurposes Shift (held) for its
+            // alignment preview (see ClickAlign.Preview) - the info panel
+            // is already open there by definition, so only Ctrl toggles it.
+            when {
+                tools.manualAlignMode && event.key in manualAlignDirectionKeys -> {
+                    when (event.type) {
+                        KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
+                        KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
+                        else -> {}
+                    }
+                    true
+                }
+                tools.clickAlignMode && event.key.isShift -> {
+                    when (event.type) {
+                        KeyEventType.KeyDown -> viewModel.setClickAlignPreviewActive(true)
+                        KeyEventType.KeyUp -> viewModel.setClickAlignPreviewActive(false)
+                        else -> {}
+                    }
+                    true
+                }
+                // Same Shift-held repurposing for "Copy from image": while
+                // held, the alignment is dropped to preview the result as
+                // it will be saved (see PhotoToolsState.copyUnalignedPreview).
+                tools.copyFromImageMode && event.key.isShift -> {
+                    when (event.type) {
+                        KeyEventType.KeyDown -> viewModel.setCopyUnalignedPreview(true)
+                        KeyEventType.KeyUp -> viewModel.setCopyUnalignedPreview(false)
+                        else -> {}
+                    }
+                    true
+                }
+                event.type != KeyEventType.KeyDown -> false
+                event.key == Key.Escape -> {
+                    cancelActiveTool()
+                    true
+                }
+                event.key.isShift || event.key.isCtrl -> {
+                    showImageInfoPanel = !showImageInfoPanel
+                    true
+                }
+                else -> true
+            }
+        } else {
+            // Toggles on the key-down of Shift itself (not on every
+            // event where one happens to be held as a modifier), so a
+            // press opens the panel and the next press closes it again -
+            // holding the key no longer matters. Ctrl toggles on key-up
+            // instead, and only if the wheel wasn't used while it was held,
+            // since Ctrl+wheel zooms the photo (see ImageScreen's onCtrlZoomed).
+            if (inViewer && event.type == KeyEventType.KeyDown && event.key.isShift) {
+                showImageInfoPanel = !showImageInfoPanel
+            }
+            // Reset on key-up rather than key-down: holding Ctrl auto-repeats
+            // key-down events, which would wipe the flag mid-zoom.
+            if (inViewer && event.key.isCtrl && event.type == KeyEventType.KeyUp) {
+                if (!ctrlUsedForZoom[0]) showImageInfoPanel = !showImageInfoPanel
+                ctrlUsedForZoom[0] = false
+            }
+            if (!inViewer || event.type != KeyEventType.KeyDown) {
+                false
+            } else when (event.key) {
+                Key.Escape -> {
+                    exitFullscreen()
+                    true
+                }
+                Key.Spacebar, Key.DirectionRight -> {
+                    viewModel.showNextImage()
+                    true
+                }
+                Key.DirectionLeft -> {
+                    viewModel.showPreviousImage()
+                    true
+                }
+                Key.A -> {
+                    // Runs on a background thread via performAutoAlign
+                    // (same path as AlignButtonsRow's Correct zoom button),
+                    // which also no-ops if a task is already running.
+                    // Only meaningful for still images, not video.
+                    if (viewModel.screen == Screen.ImageView) {
+                        viewModel.currentImage?.let { file ->
+                            coroutineScope.launch {
+                                viewModel.performAutoAlign(file, AlignKind.AFFINE)
+                            }
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    // Undecorated + Maximized ("borderless fullscreen") rather than WindowPlacement.Fullscreen: on
+    // Windows, Fullscreen puts the window into real OS exclusive full-screen mode
+    // (GraphicsDevice.fullScreenWindow), which Windows auto-minimizes if the window loses focus -
+    // e.g. when the 3D monitor's own "activate 3D" popup steals focus. Maximized is a normal
+    // window, so it just deactivates instead of getting iconified.
+    //
+    // [target] (from FullscreenDisplayDialog or the remembered choice) is the screen to go
+    // fullscreen on: when it isn't the one the window is on, the window is first placed inside
+    // that screen's bounds - the key(undecorated) recreation then builds the new window there and
+    // Windows maximizes it on that monitor - and the 2D remote control window opens where the app
+    // was. If the screen's AWT bounds can't be found, it stays where it is, as before.
+    fun enterFullscreen(target: ConnectedScreen? = null) {
+        previousPlacement = windowState.placement
+        previousSize = windowState.size
+        previousPosition = windowState.position
+        val targetBounds = target
+            ?.takeIf { it.gdiDeviceName != viewModel.screenWatcher.currentGdiDeviceName }
+            ?.let(ScreenManager::awtBoundsOf)
+        if (targetBounds != null) {
+            remoteControlBounds = RemoteControlBounds(previousPosition, previousSize)
+            val (position, size) = centeredIn(targetBounds, windowState.size)
+            windowState.placement = WindowPlacement.Floating
+            windowState.size = size
+            windowState.position = position
+        }
+        windowState.placement = WindowPlacement.Maximized
+        isEnteringFullscreen = true
+        enteredFullscreenAtMs = System.currentTimeMillis()
+    }
+
+    // Every "open in the fullscreen viewer" path goes through here. [precheck] is the part of
+    // [open] that can refuse (VLC missing) - run first, so the caller's own failure toast still
+    // works even when the actual opening waits on FullscreenDisplayDialog; [open] switches the
+    // view model to the viewer and returns whether it did.
+    fun requestFullscreen(precheck: () -> Boolean, open: () -> Boolean): Boolean {
+        if (!precheck()) return false
+        when (val decision = viewModel.fullscreenDisplay.decide()) {
+            DisplayDecision.Ask -> pendingFullscreenOpen = open
+            is DisplayDecision.Use -> if (open()) enterFullscreen(decision.target)
+        }
+        return true
+    }
+
+    // Shared by the viewer's InfoPanel (inside ImageScreen) and the remote control window's copy.
+    fun photoToolActionsFor(file: File) = PhotoToolActions(
+        onAutoAlign = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY) } },
+        onCorrectZoom = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.AFFINE) } },
+        onSaveAligned = { coroutineScope.launch { viewModel.performSaveAligned() } },
+        onCancelAligned = viewModel::cancelAligned,
+        onStartManualAlign = viewModel::startManualAlign,
+        onCancelManualAlign = viewModel::cancelManualAlign,
+        onSaveManualAlign = { coroutineScope.launch { viewModel.performSaveManualAlign() } },
+        onStartCrop = viewModel::startCrop,
+        onCropRectFinalized = viewModel::finalizeCropRect,
+        onCancelCrop = viewModel::cancelCrop,
+        onSaveCrop = { coroutineScope.launch { viewModel.performSaveCrop() } },
+        onStartSpotIssues = viewModel::startSpotIssues,
+        onSpotIssueRectAdded = viewModel::addSpotIssueRect,
+        onCancelSpotIssues = viewModel::cancelSpotIssues,
+        onSaveSpotIssues = { coroutineScope.launch { viewModel.performSaveSpotIssues() } },
+        onStartClickAlign = viewModel::startClickAlign,
+        onClickAlignPointSet = viewModel::setClickAlignPoint,
+        onCancelClickAlign = viewModel::cancelClickAlign,
+        onSaveClickAlign = { coroutineScope.launch { viewModel.performSaveClickAlign() } },
+        onRequestClickAlignPreview = { coroutineScope.launch { viewModel.refreshClickAlignPreview() } },
+        onStartCopyFromImage = viewModel::startCopyFromImage,
+        onCopyAlignPointSet = viewModel::setCopyAlignPoint,
+        onCopyPaintStroke = viewModel::paintCopyStroke,
+        onScaleCopyBrush = viewModel::scaleCopyBrush,
+        onCancelCopyFromImage = viewModel::cancelCopyFromImage,
+        onSaveCopyFromImage = { coroutineScope.launch { viewModel.performSaveCopyFromImage() } },
+        onDeleteCurrentImage = { coroutineScope.launch { viewModel.performDeleteCurrentImage() } },
+        onDeleteKeepingLeft = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) } },
+        onDeleteKeepingRight = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) } },
+    )
 
     // Bumped by the window exception handler below to throw away a crashed Window and compose a
     // fresh one (via the same key() that handles undecorated changes).
@@ -310,6 +542,8 @@ private fun runApp(args: Array<String>) = application {
                     showImageInfoPanel = false
                     imageDialogShown = false
                     isEnteringFullscreen = false
+                    remoteControlBounds = null
+                    pendingFullscreenOpen = null
                     viewModel.resetAfterCrash()
                     lastCrashTrace = runCatching { CrashReporting.scrub(throwable.stackTraceToString()) }.getOrNull()
                     showCrashRecoveredDialog = true
@@ -419,138 +653,8 @@ private fun runApp(args: Array<String>) = application {
                                     .fillMaxSize()
                                     .focusRequester(focusRequester)
                                     .focusable()
-                                    .onPreviewKeyEvent { event ->
-                                        val tools = viewModel.photoTools
-                                        // The active edit tool's own "discard" action, null when none is active.
-                                        val cancelActiveTool: (() -> Unit)? = when {
-                                            tools.manualAlignMode -> viewModel::cancelManualAlign
-                                            tools.cropMode -> viewModel::cancelCrop
-                                            tools.spotIssuesMode -> viewModel::cancelSpotIssues
-                                            tools.clickAlignMode -> viewModel::cancelClickAlign
-                                            tools.copyFromImageMode -> viewModel::cancelCopyFromImage
-                                            else -> null
-                                        }
-                                        if (imageDialogShown) {
-                                            // Leave every key untouched (see imageDialogShown's doc) so
-                                            // it reaches the in-scene dialog's own TextField/buttons
-                                            // instead of being swallowed as an app-wide shortcut -
-                                            // Escape closing the dialog, Space typing a literal space,
-                                            // and arrow keys moving the text caret all rely on this.
-                                            false
-                                        } else if (cancelActiveTool != null) {
-                                            // While an edit tool is active: Escape cancels it instead of
-                                            // exiting fullscreen, Shift/Ctrl still toggle the info panel,
-                                            // and every other key-down is swallowed so nothing else -
-                                            // navigation, auto-align's "A" shortcut - can mutate state out
-                                            // from under the pending edit. Two tool-specific exceptions:
-                                            // manual align's arrow keys feed the tick-loop LaunchedEffect
-                                            // above, and click align repurposes Shift (held) for its
-                                            // alignment preview (see ClickAlign.Preview) - the info panel
-                                            // is already open there by definition, so only Ctrl toggles it.
-                                            when {
-                                                tools.manualAlignMode && event.key in manualAlignDirectionKeys -> {
-                                                    when (event.type) {
-                                                        KeyEventType.KeyDown -> manualAlignKeyPressStart.getOrPut(event.key) { System.currentTimeMillis() }
-                                                        KeyEventType.KeyUp -> manualAlignKeyPressStart.remove(event.key)
-                                                        else -> {}
-                                                    }
-                                                    true
-                                                }
-                                                tools.clickAlignMode && event.key.isShift -> {
-                                                    when (event.type) {
-                                                        KeyEventType.KeyDown -> viewModel.setClickAlignPreviewActive(true)
-                                                        KeyEventType.KeyUp -> viewModel.setClickAlignPreviewActive(false)
-                                                        else -> {}
-                                                    }
-                                                    true
-                                                }
-                                                // Same Shift-held repurposing for "Copy from image": while
-                                                // held, the alignment is dropped to preview the result as
-                                                // it will be saved (see PhotoToolsState.copyUnalignedPreview).
-                                                tools.copyFromImageMode && event.key.isShift -> {
-                                                    when (event.type) {
-                                                        KeyEventType.KeyDown -> viewModel.setCopyUnalignedPreview(true)
-                                                        KeyEventType.KeyUp -> viewModel.setCopyUnalignedPreview(false)
-                                                        else -> {}
-                                                    }
-                                                    true
-                                                }
-                                                event.type != KeyEventType.KeyDown -> false
-                                                event.key == Key.Escape -> {
-                                                    cancelActiveTool()
-                                                    true
-                                                }
-                                                event.key.isShift || event.key.isCtrl -> {
-                                                    showImageInfoPanel = !showImageInfoPanel
-                                                    true
-                                                }
-                                                else -> true
-                                            }
-                                        } else {
-                                            // Toggles on the key-down of Shift itself (not on every
-                                            // event where one happens to be held as a modifier), so a
-                                            // press opens the panel and the next press closes it again -
-                                            // holding the key no longer matters. Ctrl toggles on key-up
-                                            // instead, and only if the wheel wasn't used while it was held,
-                                            // since Ctrl+wheel zooms the photo (see ImageScreen's onCtrlZoomed).
-                                            if (inViewer && event.type == KeyEventType.KeyDown && event.key.isShift) {
-                                                showImageInfoPanel = !showImageInfoPanel
-                                            }
-                                            // Reset on key-up rather than key-down: holding Ctrl auto-repeats
-                                            // key-down events, which would wipe the flag mid-zoom.
-                                            if (inViewer && event.key.isCtrl && event.type == KeyEventType.KeyUp) {
-                                                if (!ctrlUsedForZoom[0]) showImageInfoPanel = !showImageInfoPanel
-                                                ctrlUsedForZoom[0] = false
-                                            }
-                                            if (!inViewer || event.type != KeyEventType.KeyDown) {
-                                                false
-                                            } else when (event.key) {
-                                                Key.Escape -> {
-                                                    exitFullscreen()
-                                                    true
-                                                }
-                                                Key.Spacebar, Key.DirectionRight -> {
-                                                    viewModel.showNextImage()
-                                                    true
-                                                }
-                                                Key.DirectionLeft -> {
-                                                    viewModel.showPreviousImage()
-                                                    true
-                                                }
-                                                Key.A -> {
-                                                    // Runs on a background thread via performAutoAlign
-                                                    // (same path as AlignButtonsRow's Correct zoom button),
-                                                    // which also no-ops if a task is already running.
-                                                    // Only meaningful for still images, not video.
-                                                    if (viewModel.screen == Screen.ImageView) {
-                                                        viewModel.currentImage?.let { file ->
-                                                            coroutineScope.launch {
-                                                                viewModel.performAutoAlign(file, AlignKind.AFFINE)
-                                                            }
-                                                        }
-                                                    }
-                                                    true
-                                                }
-                                                else -> false
-                                            }
-                                        }
-                                    }
+                                    .onPreviewKeyEvent(handleViewerKey)
                             ) {
-                                // Undecorated + Maximized ("borderless fullscreen") rather than
-                                // WindowPlacement.Fullscreen: on Windows, Fullscreen puts the window
-                                // into real OS exclusive full-screen mode (GraphicsDevice.fullScreenWindow),
-                                // which Windows auto-minimizes if the window loses focus - e.g. when the
-                                // 3D monitor's own "activate 3D" popup steals focus. Maximized is a normal
-                                // window, so it just deactivates instead of getting iconified.
-                                fun enterFullscreen() {
-                                    previousPlacement = windowState.placement
-                                    previousSize = windowState.size
-                                    previousPosition = windowState.position
-                                    windowState.placement = WindowPlacement.Maximized
-                                    isEnteringFullscreen = true
-                                    enteredFullscreenAtMs = System.currentTimeMillis()
-                                }
-
                                 // Samsung 3D monitor sharing the desktop with other screens: its 3D
                                 // mode needs it alone ("Second screen only"), so warn on the 2D entry
                                 // screens. The band takes its own space under the screen content
@@ -576,8 +680,13 @@ private fun runApp(args: Array<String>) = application {
                                         screenMode = viewModel.screenWatcher.mode,
                                         currentScreenGdiDeviceName = viewModel.screenWatcher.currentGdiDeviceName,
                                         onFilesChosen = { files ->
-                                            if (viewModel.onFilesChosen(files)) enterFullscreen()
+                                            requestFullscreen(
+                                                precheck = { files.firstOrNull()?.extension?.lowercase() !in VideoExtensions || viewModel.requireVlc() },
+                                                open = { viewModel.onFilesChosen(files) },
+                                            )
                                         },
+                                        fullscreenDisplayId = viewModel.fullscreenDisplay.rememberedScreenId,
+                                        onFullscreenDisplayChosen = viewModel.fullscreenDisplay::setRemembered,
                                         onOpenPlaylistList = { viewModel.openPlaylistList() },
                                         onOpenGallery = { folder -> viewModel.openGallery(folder) },
                                         onOpenAbout = { viewModel.openAbout() },
@@ -602,7 +711,10 @@ private fun runApp(args: Array<String>) = application {
                                             onScrollTargetConsumed = { viewModel.consumeGalleryScrollTarget() },
                                             onToggleGroup = { path -> viewModel.toggleGalleryGroup(path) },
                                             onOpenImage = { group, index ->
-                                                if (viewModel.openGalleryImage(group, index)) enterFullscreen()
+                                                requestFullscreen(
+                                                    precheck = { group.files.getOrNull(index)?.let { !isVideoFilename(it.name) || viewModel.requireVlc() } ?: false },
+                                                    open = { viewModel.openGalleryImage(group, index) },
+                                                )
                                             },
                                             onBack = {
                                                 if (viewModel.gallery.pickerMode) viewModel.cancelGalleryPicker() else viewModel.closeGallery()
@@ -630,9 +742,10 @@ private fun runApp(args: Array<String>) = application {
                                         onRefresh = { viewModel.refreshPlaylistList() },
                                         onOpenPlaylist = { playlist -> viewModel.openPlaylistForEdit(playlist) },
                                         onPlayPlaylist = { playlist ->
-                                            val started = viewModel.playPlaylist(playlist)
-                                            if (started) enterFullscreen()
-                                            started
+                                            requestFullscreen(
+                                                precheck = { viewModel.canPlayPlaylist(playlist) },
+                                                open = { viewModel.playPlaylist(playlist) },
+                                            )
                                         },
                                         onCreatePlaylist = { name ->
                                             viewModel.startCreatePlaylist(name)
@@ -663,9 +776,10 @@ private fun runApp(args: Array<String>) = application {
                                                 }
                                             },
                                             onPlay = {
-                                                val started = viewModel.playEditingPlaylist()
-                                                if (started) enterFullscreen()
-                                                started
+                                                requestFullscreen(
+                                                    precheck = { viewModel.playlistEditor.editing?.let(viewModel::canPlayPlaylist) ?: false },
+                                                    open = { viewModel.playEditingPlaylist() },
+                                                )
                                             },
                                             onBack = { viewModel.closePlaylistEdit() },
                                             onEditName = viewModel::modifyPlaylistName,
@@ -783,7 +897,10 @@ private fun runApp(args: Array<String>) = application {
                                                 ImageScreen(
                                                     file,
                                                     overrideBitmap = viewModel.photoTools.alignedPreview,
-                                                    showInfoPanel = showImageInfoPanel,
+                                                    // In remote-control mode the info panel lives in the 2D remote window instead.
+                                                    showInfoPanel = showImageInfoPanel && remoteControlBounds == null,
+                                                    showInfoPanelItem = remoteControlBounds == null,
+                                                    onPhotoUnreadableChanged = { photoUnreadable = it },
                                                     hasAlignedPreview = viewModel.photoTools.alignedPreview != null,
                                                     isAligning = viewModel.isAligning,
                                                     alignToast = viewModel.alignToast,
@@ -842,37 +959,7 @@ private fun runApp(args: Array<String>) = application {
                                                     onShareChosen = { type, destination ->
                                                         coroutineScope.launch { viewModel.performShare(type, destination) }
                                                     },
-                                                    photoToolActions = PhotoToolActions(
-                                                        onAutoAlign = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.HOMOGRAPHY) } },
-                                                        onCorrectZoom = { coroutineScope.launch { viewModel.performAutoAlign(file, AlignKind.AFFINE) } },
-                                                        onSaveAligned = { coroutineScope.launch { viewModel.performSaveAligned() } },
-                                                        onCancelAligned = viewModel::cancelAligned,
-                                                        onStartManualAlign = viewModel::startManualAlign,
-                                                        onCancelManualAlign = viewModel::cancelManualAlign,
-                                                        onSaveManualAlign = { coroutineScope.launch { viewModel.performSaveManualAlign() } },
-                                                        onStartCrop = viewModel::startCrop,
-                                                        onCropRectFinalized = viewModel::finalizeCropRect,
-                                                        onCancelCrop = viewModel::cancelCrop,
-                                                        onSaveCrop = { coroutineScope.launch { viewModel.performSaveCrop() } },
-                                                        onStartSpotIssues = viewModel::startSpotIssues,
-                                                        onSpotIssueRectAdded = viewModel::addSpotIssueRect,
-                                                        onCancelSpotIssues = viewModel::cancelSpotIssues,
-                                                        onSaveSpotIssues = { coroutineScope.launch { viewModel.performSaveSpotIssues() } },
-                                                        onStartClickAlign = viewModel::startClickAlign,
-                                                        onClickAlignPointSet = viewModel::setClickAlignPoint,
-                                                        onCancelClickAlign = viewModel::cancelClickAlign,
-                                                        onSaveClickAlign = { coroutineScope.launch { viewModel.performSaveClickAlign() } },
-                                                        onRequestClickAlignPreview = { coroutineScope.launch { viewModel.refreshClickAlignPreview() } },
-                                                        onStartCopyFromImage = viewModel::startCopyFromImage,
-                                                        onCopyAlignPointSet = viewModel::setCopyAlignPoint,
-                                                        onCopyPaintStroke = viewModel::paintCopyStroke,
-                                                        onScaleCopyBrush = viewModel::scaleCopyBrush,
-                                                        onCancelCopyFromImage = viewModel::cancelCopyFromImage,
-                                                        onSaveCopyFromImage = { coroutineScope.launch { viewModel.performSaveCopyFromImage() } },
-                                                        onDeleteCurrentImage = { coroutineScope.launch { viewModel.performDeleteCurrentImage() } },
-                                                        onDeleteKeepingLeft = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.LEFT) } },
-                                                        onDeleteKeepingRight = { coroutineScope.launch { viewModel.performDeleteCurrentImage(AppViewModel.KeepHalfSide.RIGHT) } },
-                                                    ),
+                                                    photoToolActions = photoToolActionsFor(file),
                                                     onImageLoaded = finishEnteringFullscreen,
                                                     onRequestKeyboardFocus = { focusRequester.requestFocus() },
                                                     onDialogShownChanged = { imageDialogShown = it },
@@ -935,6 +1022,29 @@ private fun runApp(args: Array<String>) = application {
                                     })
                                 }
 
+                                // After the consent dialog, so a launch needing both doesn't stack them.
+                                val pendingOpen = pendingFullscreenOpen
+                                if (pendingOpen != null && analyticsConsentAnswered) {
+                                    FullscreenDisplayDialog(
+                                        screens = viewModel.screenWatcher.screens,
+                                        currentGdiDeviceName = viewModel.screenWatcher.currentGdiDeviceName,
+                                        onChosen = { screen, rememberChoice ->
+                                            pendingFullscreenOpen = null
+                                            val other = screen.gdiDeviceName != viewModel.screenWatcher.currentGdiDeviceName
+                                            if (rememberChoice) viewModel.fullscreenDisplay.setRemembered(screen.id)
+                                            Analytics.logEvent(
+                                                "fullscreen_display_chosen",
+                                                mapOf("choice" to if (other) "other" else "current", "remembered" to rememberChoice),
+                                            )
+                                            if (pendingOpen()) enterFullscreen(screen)
+                                        },
+                                        onDismiss = {
+                                            pendingFullscreenOpen = null
+                                            Analytics.logEvent("fullscreen_display_chosen", mapOf("choice" to "dismissed", "remembered" to false))
+                                        },
+                                    )
+                                }
+
                                 if (!analyticsConsentAnswered) {
                                     AnalyticsConsentDialog(onAnswered = { granted ->
                                         Analytics.setConsent(granted)
@@ -953,6 +1063,53 @@ private fun runApp(args: Array<String>) = application {
                                         },
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // The 2D "remote control" on the original display while the viewer runs fullscreen on
+        // another one (see remoteControlBounds / RemoteControlWindow.kt). Outside key(undecorated),
+        // so the viewer Window's recreations don't recreate it.
+        val remote = remoteControlBounds
+        if (remote != null && (viewModel.screen == Screen.ImageView || viewModel.screen == Screen.VideoView)) {
+            val remoteWindowState = rememberWindowState(position = remote.position, size = remote.size)
+            // Created hidden, then shown once autoRequestFocus is off, so it doesn't take the
+            // keyboard focus away from the viewer window that is opening at the same time.
+            var remoteVisible by remember { mutableStateOf(false) }
+            val remoteFocusRequester = remember { FocusRequester() }
+            Window(
+                onCloseRequest = exitFullscreen,
+                state = remoteWindowState,
+                visible = remoteVisible,
+                title = stringResource(Res.string.remote_control_window_title),
+                icon = painterResource(Res.drawable.icon),
+            ) {
+                LaunchedEffect(Unit) {
+                    window.isAutoRequestFocus = false
+                    remoteVisible = true
+                }
+                CompositionLocalProvider(LocalAppLocale provides viewModel.language) {
+                    key(viewModel.language) {
+                        AppTheme {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(remoteFocusRequester)
+                                    .focusable()
+                                    .onPreviewKeyEvent(handleViewerKey),
+                            ) {
+                                LaunchedEffect(Unit) { remoteFocusRequester.requestFocus() }
+                                val file = viewModel.currentImage
+                                RemoteControlContent(
+                                    viewModel = viewModel,
+                                    photoToolActions = remember(file) { file?.let { photoToolActionsFor(it) } ?: PhotoToolActions() },
+                                    photoUnreadable = photoUnreadable,
+                                    onExitFullscreen = exitFullscreen,
+                                    onDialogOpenChanged = { imageDialogShown = it },
+                                )
                             }
                         }
                     }

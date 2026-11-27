@@ -24,6 +24,35 @@ class FloatPref(private val key: String, private val default: Float) {
     fun save(value: Float) = appPrefs.putFloat(key, value)
 }
 
+/**
+ * A String setting whose key is only known at runtime (e.g. one per screen setup, see
+ * FullscreenDisplayPreference) and that can be unset. Never throws: a failing backing store
+ * reads as "not set" and silently drops the write.
+ */
+object DynamicStringPrefs {
+    fun load(key: String): String? = try {
+        appPrefs.get(key, null)
+    } catch (e: Exception) {
+        null
+    }
+
+    fun save(key: String, value: String) {
+        try {
+            appPrefs.put(key, value)
+        } catch (e: Exception) {
+            // Registry write refused - the choice just isn't remembered.
+        }
+    }
+
+    fun remove(key: String) {
+        try {
+            appPrefs.remove(key)
+        } catch (e: Exception) {
+            // Same as save().
+        }
+    }
+}
+
 /** Same shape as [BooleanPref], for a String-valued setting (today: audioOutputDeviceId). */
 class StringPref(private val key: String, private val default: String) {
     fun load(): String = appPrefs.get(key, default)

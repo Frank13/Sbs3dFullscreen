@@ -196,6 +196,11 @@ fun InfoPanel(
     // spot-issues/delete tools (which insert or remove files) are hidden - see AppViewModel's
     // playingPlaylist guards.
     showEditTools: Boolean = true,
+    // False for the 2D remote control window (see RemoteControlWindow.kt): a single, unshifted
+    // copy instead of one per SBS half. Pass shrinkControls = false with it, so the panel's
+    // dialogs are plain 2D windows; outside a Stereo3DCursorHost, cursor3DClickTarget and
+    // cursor3DDepthTarget no-op and the native clickables work as usual.
+    stereo: Boolean = true,
 ) {
     // Read off the UI thread and show a spinner meanwhile: EXIF I/O is normally fast, but this
     // guards against a slow/network drive stalling the toggled-open HUD from appearing at all.
@@ -328,7 +333,9 @@ fun InfoPanel(
     // still register real cursor3DClickTarget click targets, and since those targets are resolved
     // by the same registry the dialog's own buttons use, an icon happening to sit under/near the
     // dialog card could otherwise still catch a click meant for it.
-    if (!anyDialogOpen) {
+    if (!anyDialogOpen && !stereo) {
+        InfoPanelHalf(file, summary, offsetX = 0.dp, shrinkControls, onToggleFavorite, onWarningToggleRequest, { showLegendDialog = true }, tools, submenus, halfActions, onDeleteRequest, showEditTools)
+    } else if (!anyDialogOpen) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val halfWidth = maxWidth / 2
             val shift = halfWidth * InfoPanelShiftPercent
