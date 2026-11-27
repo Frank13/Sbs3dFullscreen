@@ -1,6 +1,8 @@
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
@@ -549,6 +551,14 @@ private fun runApp(args: Array<String>) = application {
                                     enteredFullscreenAtMs = System.currentTimeMillis()
                                 }
 
+                                // Samsung 3D monitor sharing the desktop with other screens: its 3D
+                                // mode needs it alone ("Second screen only"), so warn on the 2D entry
+                                // screens. The band takes its own space under the screen content
+                                // (rather than covering it), so that content's toasts/snackbars sit above it.
+                                val showSamsung3DWarning = (viewModel.screen == Screen.Welcome || viewModel.screen == Screen.Gallery) &&
+                                    viewModel.screenWatcher.showSamsung3DNotAloneWarning
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                                 when (viewModel.screen) {
                                     Screen.Welcome -> WelcomeScreen(
                                         window = window,
@@ -889,19 +899,25 @@ private fun runApp(args: Array<String>) = application {
                                     }
                                 }
 
-                                if (isEnteringFullscreen && inViewer) {
-                                    FullscreenLoadingOverlay()
-                                }
-
                                 // "New screen connected" toast: 3D in the viewers, 2D elsewhere. Only
                                 // a fresh plug event is shown, so switching screens (which recomposes
-                                // the toast from scratch) doesn't re-flash an old one.
+                                // the toast from scratch) doesn't re-flash an old one. Inside the
+                                // content box so the 2D one stays above the Samsung 3D warning band.
                                 val newScreenEvent = viewModel.screenWatcher.newlyConnected
                                     ?.takeIf { System.currentTimeMillis() - it.atMs < 3000 }
                                 if (inViewer) {
                                     ScreenConnectedStereoToast(newScreenEvent)
                                 } else {
                                     ScreenConnectedToast(newScreenEvent)
+                                }
+                                }
+                                if (showSamsung3DWarning) {
+                                    Samsung3DNotAloneWarningPanel(onClose = viewModel.screenWatcher::dismissSamsung3DNotAloneWarning)
+                                }
+                                }
+
+                                if (isEnteringFullscreen && inViewer) {
+                                    FullscreenLoadingOverlay()
                                 }
 
                                 if (viewModel.playlistEditor.isCopying) {

@@ -209,7 +209,8 @@
     <string name="welcome_settings_language_label">Language</string>
     <string name="welcome_settings_audio_unavailable">No audio device found (is VLC installed?)</string>
     <string name="screens_settings_label">Screens</string>
-    <string name="screens_mode">Mode: %1$s</string>
+    <string name="screens_mode">Screen mode: %1$s</string>
+    <string name="screens_list_title">Connected screens:</string>
     <string name="screens_mode_pc_screen_only">PC screen only</string>
     <string name="screens_mode_second_screen_only">Second screen only</string>
     <string name="screens_mode_single">Single screen</string>
@@ -217,9 +218,12 @@
     <string name="screens_mode_extend">Extend</string>
     <string name="screens_mode_duplicate_and_extend">Duplicate and extend</string>
     <string name="screens_settings_unavailable">Could not list the connected screens</string>
+    <string name="screens_samsung_3d_not_alone_warning">The Samsung 3D90X screen must be the only active screen to display in 3D. Press the %1$s + %2$s keys at the same time and select “Second screen only”.</string>
+    <string name="close">Close</string>
     <string name="screens_built_in_display">Built-in display</string>
     <string name="screens_unknown_display">Screen</string>
     <string name="screens_resolution">%1$d × %2$d pixels</string>
+    <string name="screens_native_resolution">max %1$d × %2$d</string>
     <string name="screens_primary">primary</string>
     <string name="screens_current">app displayed here</string>
     <string name="screens_new_screen_toast">New screen connected: %1$s (%2$d × %3$d)</string>

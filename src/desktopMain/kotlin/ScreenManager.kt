@@ -18,6 +18,9 @@ import com.sun.jna.ptr.IntByReference
  * "Odyssey G70NC"), null when it doesn't report one (typical for laptop panels). [brand] is
  * decoded from the EDID's 3-letter PNP manufacturer code ([manufacturerCode], e.g. "SAM").
  * [widthPx]/[heightPx] are the desktop resolution in physical pixels (not DPI-scaled).
+ * [nativeWidthPx]/[nativeHeightPx] are the monitor's own preferred (native, EDID) resolution, null
+ * if the driver doesn't report it - they differ from [widthPx]/[heightPx] typically in "duplicate"
+ * mode, where both monitors show the one shared desktop at the smaller one's resolution.
  */
 data class ConnectedScreen(
     val id: String,
@@ -27,6 +30,8 @@ data class ConnectedScreen(
     val brand: String?,
     val widthPx: Int,
     val heightPx: Int,
+    val nativeWidthPx: Int?,
+    val nativeHeightPx: Int?,
     val isPrimary: Boolean,
     val isBuiltIn: Boolean,
 ) {
@@ -43,6 +48,18 @@ data class ConnectedScreen(
                 maker == null || model.startsWith(maker, ignoreCase = true) -> model
                 else -> "$maker $model"
             }
+        }
+
+    /**
+     * True for Samsung's glasses-free 3D monitor (Odyssey 3D G90XF, the "3D90X"), whose EDID
+     * reports itself as "Odyssey G90XF". Its 3D mode only works when it is the sole active display.
+     */
+    val isSamsung3D: Boolean
+        get() {
+            val model = modelName ?: return false
+            val samsung = brand == "Samsung" || manufacturerCode == "SAM" || manufacturerCode == "SEC" ||
+                model.contains("Samsung", ignoreCase = true) || model.contains("Odyssey", ignoreCase = true)
+            return samsung && (model.contains("G90X", ignoreCase = true) || model.contains("3D90", ignoreCase = true))
         }
 }
 
@@ -185,6 +202,15 @@ object ScreenManager {
             }
             val devicePath = if (hasTargetName) target.getWideString(164).takeIf { it.isNotEmpty() } else null
 
+            // DISPLAYCONFIG_TARGET_PREFERRED_MODE (80 bytes): header (20), width @20, height @24,
+            // then the DISPLAYCONFIG_TARGET_MODE (8-byte aligned @32). The monitor's native mode,
+            // independent of the shared desktop size "duplicate" mode imposes.
+            val preferred = Memory(TargetPreferredModeSize.toLong()).apply { clear() }
+            writeHeader(preferred, DeviceInfoGetTargetPreferredMode, TargetPreferredModeSize, targetAdapterLow, targetAdapterHigh, targetId)
+            val hasPreferred = api.DisplayConfigGetDeviceInfo(preferred) == ErrorSuccess
+            val nativeWidth = if (hasPreferred) preferred.getInt(20).takeIf { it > 0 } else null
+            val nativeHeight = if (hasPreferred) preferred.getInt(24).takeIf { it > 0 } else null
+
             // DISPLAYCONFIG_SOURCE_DEVICE_NAME (84 bytes): header (20), viewGdiDeviceName[32] @20.
             val source = Memory(SourceDeviceNameSize.toLong()).apply { clear() }
             writeHeader(source, DeviceInfoGetSourceName, SourceDeviceNameSize, sourceAdapterLow, sourceAdapterHigh, sourceId)
@@ -206,6 +232,8 @@ object ScreenManager {
                 brand = manufacturerCode?.let { PnpBrands[it] },
                 widthPx = width,
                 heightPx = height,
+                nativeWidthPx = if (nativeWidth != null && nativeHeight != null) nativeWidth else null,
+                nativeHeightPx = if (nativeWidth != null && nativeHeight != null) nativeHeight else null,
                 // The primary monitor is the one whose desktop origin is (0, 0).
                 isPrimary = posX == 0 && posY == 0,
                 isBuiltIn = outputTechnology == OutputTechnologyInternal ||
@@ -274,6 +302,8 @@ object ScreenManager {
     private const val ModeInfoTypeSource = 1
     private const val DeviceInfoGetSourceName = 1
     private const val DeviceInfoGetTargetName = 2
+    private const val DeviceInfoGetTargetPreferredMode = 3
+    private const val TargetPreferredModeSize = 80
     private const val SourceDeviceNameSize = 84
     private const val TargetDeviceNameSize = 420
     private const val TargetNameFlagFriendlyNameFromEdid = 0x1
@@ -336,6 +366,21 @@ class ScreenWatcher {
     class NewScreenEvent(val screen: ConnectedScreen, val atMs: Long = System.currentTimeMillis())
 
     private var knownIds: Set<String>? = null
+
+    /**
+     * The screen set (ids) the user closed the "Samsung 3D must be the only screen" warning for:
+     * it stays closed while that exact set is connected and reappears when the setup changes.
+     */
+    private var samsung3DWarningDismissedFor by mutableStateOf<Set<String>?>(null)
+
+    /** The Samsung 3D monitor is active alongside other screens, and the user hasn't closed the warning. */
+    val showSamsung3DNotAloneWarning: Boolean
+        get() = screens.size > 1 && screens.any { it.isSamsung3D } &&
+            screens.map { it.id }.toSet() != samsung3DWarningDismissedFor
+
+    fun dismissSamsung3DNotAloneWarning() {
+        samsung3DWarningDismissedFor = screens.map { it.id }.toSet()
+    }
 
     /** The screen(s) the window is on - several in "duplicate" mode. */
     val currentScreens: List<ConnectedScreen>

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Monitor
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import sbs3dViewer.resources.screens_settings_label
 import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
 import androidx.compose.ui.draw.clip
@@ -223,7 +232,46 @@ fun WelcomeScreen(
 }
 
 /**
- * Opened by the welcome screen's gear: app-wide language, OpenCV, display (halve left & right
+ * One highlighted block of the settings dialog: a tinted card whose header is a round icon on a
+ * filled circle next to a bold [title], with [content] indented to line up under the title.
+ */
+@Composable
+private fun SettingsSection(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            // A light primary tint + outline: surfaceVariant alone is nearly the dialog's own
+            // background color, so the cards didn't stand out.
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(modifier = Modifier.padding(start = 44.dp), content = content)
+    }
+}
+
+/**
+ * Opened by the welcome screen's gear:app-wide language, OpenCV, display (halve left & right
  * images, shrink controls - same persisted AppViewModel values as ImageScreen's settings menu
  * toggles), audio output settings and the list of connected screens (see ScreenWatcher).
  */
@@ -260,12 +308,12 @@ private fun WelcomeSettingsDialog(
                         Text(stringResource(Res.string.feedback_link_label))
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(stringResource(Res.string.welcome_settings_language_label))
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val currentLanguage = language ?: LocalAppLocale.current.substring(0, 2)
-                        LanguageButton(label = "EN", selected = currentLanguage == "en", onClick = { onLanguageChosen("en") })
-                        LanguageButton(label = "FR", selected = currentLanguage == "fr", onClick = { onLanguageChosen("fr") })
+                    SettingsSection(icon = Icons.Filled.Language, title = stringResource(Res.string.welcome_settings_language_label)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val currentLanguage = language ?: LocalAppLocale.current.substring(0, 2)
+                            LanguageButton(label = "EN", selected = currentLanguage == "en", onClick = { onLanguageChosen("en") })
+                            LanguageButton(label = "FR", selected = currentLanguage == "fr", onClick = { onLanguageChosen("fr") })
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -286,29 +334,33 @@ private fun WelcomeSettingsDialog(
                         Switch(checked = shrinkControls, onCheckedChange = { trackMenuItem("welcome_shrink_controls"); onShrinkControlsChosen(it) })
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(stringResource(Res.string.image_settings_audio_output_label))
-                    if (audioDevices.isEmpty()) {
-                        Text(
-                            stringResource(Res.string.welcome_settings_audio_unavailable),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    audioDevices.forEach { device ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onAudioOutputDeviceChosen(device.deviceId) },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = audioOutputDeviceId == device.deviceId,
-                                onClick = { onAudioOutputDeviceChosen(device.deviceId) },
+                    SettingsSection(icon = Icons.AutoMirrored.Filled.VolumeUp, title = stringResource(Res.string.image_settings_audio_output_label)) {
+                        if (audioDevices.isEmpty()) {
+                            Text(
+                                stringResource(Res.string.welcome_settings_audio_unavailable),
+                                style = MaterialTheme.typography.bodySmall,
                             )
-                            Text(device.longName)
+                        }
+                        audioDevices.forEach { device ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onAudioOutputDeviceChosen(device.deviceId) },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = audioOutputDeviceId == device.deviceId,
+                                    onClick = { onAudioOutputDeviceChosen(device.deviceId) },
+                                )
+                                Text(device.longName)
+                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    ConnectedScreensSection(screens, screenMode, currentScreenGdiDeviceName)
+                    SettingsSection(icon = Icons.Filled.Monitor, title = stringResource(Res.string.screens_settings_label)) {
+                        ConnectedScreensSection(screens, screenMode, currentScreenGdiDeviceName)
+                    }
                     Spacer(Modifier.height(16.dp))
                     OutlinedButton(onClick = onOpenAbout) {
                         Text(stringResource(Res.string.about_link_label))
